@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Detalhes do Participante</title>
+</head>
+<body>
+    <h1>Detalhes do Participante</h1>
+
+    <h2>Informações do cadastro</h2>
+
+    <p><strong>Nome completo:</strong> {{ participante.nome_completo }}</p>
+    <p><strong>Data de nascimento:</strong> {{ participante.data_nascimento }}</p>
+    <p><strong>CPF:</strong> {{ participante.cpf }}</p>
+    <p><strong>E-mail:</strong> {{ participante.email }}</p>
+    <p><strong>Número:</strong> {{ participante.numero }}</p>
+    <p><strong>Nome da mãe:</strong> {{ participante.nome_mae }}</p>
+    <p><strong>Congregação:</strong> {{ participante.congregacao }}</p>
+
+    <hr>
+
+    <h2>Resumo financeiro</h2>
+    <p><strong>Total arrecadado:</strong> R$ {{ total }}</p>
+
+    <br>
+
+    <a href="/participantes/{{ participante.id }}/editar">Editar participante</a>
+    <br><br>
+    <a href="/participantes">Voltar para participantes</a>
+
+    <hr>
+
+    <h2>Adicionar arrecadação</h2>
+
+    <form method="POST" action="/participantes/{{ participante.id }}/arrecadar">
+        <input type="number" step="0.01" name="valor" placeholder="Valor" required><br><br>
+        <input type="date" name="data_lancamento" required><br><br>
+        <input type="text" name="observacao" placeholder="Observação"><br><br>
+
+        <button type="submit">Salvar arrecadação</button>
+    </form>
+
+    <hr>
+
+    <h2>Histórico de arrecadações</h2>
+
+    <table border="1" cellpadding="10">
+        <tr>
+            <th>ID</th>
+            <th>Valor</th>
+            <th>Data</th>
+            <th>Observação</th>
+        </tr>
+
+        {% for a in arrecadacoes %}
+        <tr>
+            <td>{{ a.id }}</td>
+            <td>R$ {{ a.valor }}</td>
+            <td>{{ a.data_lancamento }}</td>
+            <td>{{ a.observacao }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

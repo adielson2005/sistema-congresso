@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Editar Participante</title>
+</head>
+<body>
+    <h1>Editar Participante</h1>
+
+    <form method="POST">
+        <input type="text" name="nome_completo" value="{{ participante.nome_completo }}" required><br><br>
+        <input type="date" name="data_nascimento" value="{{ participante.data_nascimento }}" required><br><br>
+        <input type="text" name="cpf" value="{{ participante.cpf }}" required><br><br>
+        <input type="email" name="email" value="{{ participante.email }}"><br><br>
+        <input type="text" name="numero" value="{{ participante.numero }}"><br><br>
+        <input type="text" name="nome_mae" value="{{ participante.nome_mae }}"><br><br>
+        <input type="text" name="congregacao" value="{{ participante.congregacao }}" required><br><br>
+
+        <button type="submit">Salvar alterações</button>
+    </form>
+
+    <br>
+    <a href="/participantes/{{ participante.id }}">Voltar</a>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ver Participantes</title>
+</head>
+<body>
+    <h1>Lista de Participantes</h1>
+
+    <a href="/participantes">Ver participantes</a>
+    <br><br>
+
+    <table border="1" cellpadding="10">
+        <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>CPF</th>
+            <th>Congregação</th>
+            <th>Número</th>
+        </tr>
+
+        {% for p in participantes %}
+        <tr>
+            <td>{{ p.id }}</td>
+            <td><a href="/participantes/{{ p.id }}">{{ p.nome_completo }}</a></td>
+            <td>{{ p.cpf }}</td>
+            <td>{{ p.congregacao }}</td>
+            <td>{{ p.numero }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <br>
+    <a href="/dashboard">Voltar ao dashboard</a>
+</body>
+</html>

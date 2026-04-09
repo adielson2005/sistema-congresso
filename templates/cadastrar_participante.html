@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cadastrar participante</title>
+</head>
+<body>
+    <h1>Cadastrar participante</h1>
+
+    <form method="POST" action="/participantes/cadastrar">
+        <input type="text" name="nome_completo" placeholder="Nome completo" required><br><br>
+
+        <input type="date" name="data_nascimento" required><br><br>
+
+        <input type="text" name="cpf" placeholder="CPF" required><br><br>
+
+        <input type="email" name="email" placeholder="E-mail"><br><br>
+
+        <input type="text" name="numero" placeholder="Número"><br><br>
+
+        <input type="text" name="nome_mae" placeholder="Nome da mãe"><br><br>
+
+        <label>Macro:</label><br>
+        <select name="macro" id="macro" required>
+            <option value="">Selecione a macro</option>
+            {% for macro in macros %}
+                <option value="{{ macro.id }}">{{ macro.nome }}</option>
+            {% endfor %}
+        </select><br><br>
+
+        <label>Congregação:</label><br>
+        <select name="congregacao" id="congregacao" required>
+            <option value="">Selecione primeiro a macro</option>
+        </select><br><br>
+
+        <button type="submit">Salvar participante</button>
+    </form>
+
+    <br>
+    <a href="/dashboard">Voltar ao dashboard</a>
+
+    <script>
+        const macroSelect = document.getElementById("macro");
+        const congregacaoSelect = document.getElementById("congregacao");
+
+        macroSelect.addEventListener("change", async function () {
+            const macroId = this.value;
+
+            congregacaoSelect.innerHTML = '<option value="">Carregando...</option>';
+
+            if (!macroId) {
+                congregacaoSelect.innerHTML = '<option value="">Selecione primeiro a macro</option>';
+                return;
+            }
+
+            const response = await fetch(`/api/congregacoes/${macroId}`);
+            const congregacoes = await response.json();
+
+            congregacaoSelect.innerHTML = '<option value="">Selecione a congregação</option>';
+
+            congregacoes.forEach(congregacao => {
+                const option = document.createElement("option");
+                option.value = congregacao.nome;
+                option.textContent = congregacao.nome;
+                congregacaoSelect.appendChild(option);
+            });
+        });
+    </script>
+</body>
+</html>

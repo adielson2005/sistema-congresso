@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+    <h1>Painel Administrativo</h1>
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="p-3 border rounded-4">
+            <h6>Total de participantes</h6>
+            <h3>{{ total_participantes }}</h3>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="p-3 border rounded-4">
+            <h6>Total arrecadado</h6>
+            <h3>R$ {{ total_arrecadado }}</h3>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="p-3 border rounded-4">
+            <h6>Total de lançamentos</h6>
+            <h3>{{ total_lancamentos }}</h3>
+        </div>
+    </div>
+</div>
+
+<hr class="my-4">
+
+<h4>Últimas arrecadações</h4>
+
+<div class="table-responsive">
+    <table class="table table-bordered align-middle">
+        <thead>
+            <tr>
+                <th>Participante</th>
+                <th>Valor</th>
+                <th>Data</th>
+                <th>Observação</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in ultimas_arrecadacoes %}
+            <tr>
+                <td>{{ a.nome_completo }}</td>
+                <td>R$ {{ a.valor }}</td>
+                <td>{{ a.data_lancamento }}</td>
+                <td>{{ a.observacao }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+</body>
+</html>
