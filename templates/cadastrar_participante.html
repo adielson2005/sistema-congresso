@@ -1,69 +1,95 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Cadastrar participante</title>
-</head>
-<body>
-    <h1>Cadastrar participante</h1>
+  {% extends "base.html" %}
 
-    <form method="POST" action="/participantes/cadastrar">
-        <input type="text" name="nome_completo" placeholder="Nome completo" required><br><br>
+{% block title %}Cadastrar Participante{% endblock %}
+{% block page_title %}Cadastrar Participante{% endblock %}
 
-        <input type="date" name="data_nascimento" required><br><br>
+{% block page_content %}
+<div class="mb-4">
+    <h3 class="mb-1">Novo Participante</h3>
+    <p class="text-muted mb-0">Preencha os dados abaixo para cadastrar um novo participante.</p>
+</div>
 
-        <input type="text" name="cpf" placeholder="CPF" required><br><br>
+<form method="POST" action="/participantes/cadastrar">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Nome completo</label>
+            <input type="text" name="nome_completo" class="form-control" required>
+        </div>
 
-        <input type="email" name="email" placeholder="E-mail"><br><br>
+        <div class="col-md-6">
+            <label class="form-label">Data de nascimento</label>
+            <input type="date" name="data_nascimento" class="form-control" required>
+        </div>
 
-        <input type="text" name="numero" placeholder="Número"><br><br>
+        <div class="col-md-6">
+            <label class="form-label">CPF</label>
+            <input type="text" name="cpf" class="form-control" required>
+        </div>
 
-        <input type="text" name="nome_mae" placeholder="Nome da mãe"><br><br>
+        <div class="col-md-6">
+            <label class="form-label">E-mail</label>
+            <input type="email" name="email" class="form-control">
+        </div>
 
-        <label>Macro:</label><br>
-        <select name="macro" id="macro" required>
-            <option value="">Selecione a macro</option>
-            {% for macro in macros %}
-                <option value="{{ macro.id }}">{{ macro.nome }}</option>
-            {% endfor %}
-        </select><br><br>
+        <div class="col-md-6">
+            <label class="form-label">Número</label>
+            <input type="text" name="numero" class="form-control">
+        </div>
 
-        <label>Congregação:</label><br>
-        <select name="congregacao" id="congregacao" required>
-            <option value="">Selecione primeiro a macro</option>
-        </select><br><br>
+        <div class="col-md-6">
+            <label class="form-label">Nome da mãe</label>
+            <input type="text" name="nome_mae" class="form-control">
+        </div>
 
-        <button type="submit">Salvar participante</button>
-    </form>
+        <div class="col-md-6">
+            <label class="form-label">Macro</label>
+            <select name="macro" id="macro" class="form-select" required>
+                <option value="">Selecione a macro</option>
+                {% for macro in macros %}
+                    <option value="{{ macro.id }}">{{ macro.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
 
-    <br>
-    <a href="/dashboard">Voltar ao dashboard</a>
+        <div class="col-md-6">
+            <label class="form-label">Congregação</label>
+            <select name="congregacao" id="congregacao" class="form-select" required>
+                <option value="">Selecione primeiro a macro</option>
+            </select>
+        </div>
+    </div>
 
-    <script>
-        const macroSelect = document.getElementById("macro");
-        const congregacaoSelect = document.getElementById("congregacao");
+    <div class="mt-4 d-flex gap-2">
+        <button type="submit" class="btn btn-success">Salvar participante</button>
+        <a href="/participantes" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+</form>
 
-        macroSelect.addEventListener("change", async function () {
-            const macroId = this.value;
+<script>
+    const macroSelect = document.getElementById("macro");
+    const congregacaoSelect = document.getElementById("congregacao");
 
-            congregacaoSelect.innerHTML = '<option value="">Carregando...</option>';
+    macroSelect.addEventListener("change", async function () {
+        const macroId = this.value;
 
-            if (!macroId) {
-                congregacaoSelect.innerHTML = '<option value="">Selecione primeiro a macro</option>';
-                return;
-            }
+        congregacaoSelect.innerHTML = '<option value="">Carregando...</option>';
 
-            const response = await fetch(`/api/congregacoes/${macroId}`);
-            const congregacoes = await response.json();
+        if (!macroId) {
+            congregacaoSelect.innerHTML = '<option value="">Selecione primeiro a macro</option>';
+            return;
+        }
 
-            congregacaoSelect.innerHTML = '<option value="">Selecione a congregação</option>';
+        const response = await fetch(`/api/congregacoes/${macroId}`);
+        const congregacoes = await response.json();
 
-            congregacoes.forEach(congregacao => {
-                const option = document.createElement("option");
-                option.value = congregacao.nome;
-                option.textContent = congregacao.nome;
-                congregacaoSelect.appendChild(option);
-            });
+        congregacaoSelect.innerHTML = '<option value="">Selecione a congregação</option>';
+
+        congregacoes.forEach(congregacao => {
+            const option = document.createElement("option");
+            option.value = congregacao.nome;
+            option.textContent = congregacao.nome;
+            congregacaoSelect.appendChild(option);
         });
-    </script>
-</body>
-</html>
+    });
+</script>
+{% endblock %}

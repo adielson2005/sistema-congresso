@@ -25,9 +25,9 @@
         }
 
         .logo {
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 32px;
+            font-size: 25px;
+            font-weight: arial black;
+            margin-bottom: 30px;
             color: #1f2937;
         }
 
@@ -46,6 +46,7 @@
             border-radius: 12px;
             margin-bottom: 8px;
             transition: 0.2s;
+            font-weight: 500;
         }
 
         .menu a:hover,
@@ -89,14 +90,14 @@
 <body>
     <div class="layout">
         <aside class="sidebar">
-            <div class="logo">CongressoSys</div>
+            <div class="logo">Sistema cadepa</div>
 
             <div class="menu-title">Navegação</div>
 
             <nav class="menu">
-                <a href="/dashboard">Dashboard</a>
-                <a href="/participantes/cadastrar">Cadastrar participante</a>
-                <a href="/participantes">Ver participantes</a>
+                <a href="/dashboard" class="{% if request.path == '/dashboard' %}active{% endif %}">Dashboard</a>
+                <a href="/participantes/cadastrar" class="{% if request.path == '/participantes/cadastrar' %}active{% endif %}">Cadastrar participante</a>
+                <a href="/participantes" class="{% if request.path == '/participantes' %}active{% endif %}">Ver participantes</a>
                 <a href="/logout">Sair</a>
             </nav>
         </aside>
@@ -113,10 +114,24 @@
 
             <div class="content">
                 <div class="content-card">
-                    {% block content %}{% endblock %}
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            <div class="mb-3">
+                                {% for category, message in messages %}
+                                    <div class="alert alert-{{ category }} alert-dimissible fade show" role="alert">
+                                        {{ message }}
+                                        <button type="button" class="btn-close" data-bs-dimiss="alert"></button>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                    {% endwith %}
+
+                    {% block page_content %}{% endblock %}
                 </div>
             </div>
         </main>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

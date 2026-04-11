@@ -1,46 +1,47 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dashboard</title>
-</head>
-<body>
-    <h1>Painel Administrativo</h1>
 {% extends "base.html" %}
 
 {% block title %}Dashboard{% endblock %}
 {% block page_title %}Dashboard{% endblock %}
 
-{% block content %}
-<div class="row g-3">
+{% block page_content %}
+<div class="mb-4">
+    <h3 class="mb-1">Painel Administrativo</h3>
+    <p class="text-muted mb-0">Acompanhe os principais dados do sistema de arrecadação.</p>
+</div>
+
+<div class="row g-3 mb-4">
     <div class="col-md-4">
-        <div class="p-3 border rounded-4">
-            <h6>Total de participantes</h6>
-            <h3>{{ total_participantes }}</h3>
+        <div class="p-4 bg-light border rounded-4">
+            <h6 class="text-muted mb-2">Total de participantes</h6>
+            <h2 class="mb-0">{{ total_participantes }}</h2>
         </div>
     </div>
 
     <div class="col-md-4">
-        <div class="p-3 border rounded-4">
-            <h6>Total arrecadado</h6>
-            <h3>R$ {{ total_arrecadado }}</h3>
+        <div class="p-4 bg-light border rounded-4">
+            <h6 class="text-muted mb-2">Total arrecadado</h6>
+            <h2 class="mb-0">R$ {{ "%.2f"|format(total_arrecadado) }}</h2>
         </div>
     </div>
 
     <div class="col-md-4">
-        <div class="p-3 border rounded-4">
-            <h6>Total de lançamentos</h6>
-            <h3>{{ total_lancamentos }}</h3>
+        <div class="p-4 bg-light border rounded-4">
+            <h6 class="text-muted mb-2">Total de lançamentos</h6>
+            <h2 class="mb-0">{{ total_lancamentos }}</h2>
         </div>
     </div>
 </div>
 
-<hr class="my-4">
+<div class="d-flex flex-wrap gap-2 mb-4">
+    <a href="/participantes/cadastrar" class="btn btn-primary">Cadastrar participante</a>
+    <a href="/participantes" class="btn btn-outline-dark">Ver participantes</a>
+</div>
 
-<h4>Últimas arrecadações</h4>
+<h4 class="mb-3">Últimas arrecadações</h4>
 
 <div class="table-responsive">
-    <table class="table table-bordered align-middle">
-        <thead>
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-light">
             <tr>
                 <th>Participante</th>
                 <th>Valor</th>
@@ -61,5 +62,3 @@
     </table>
 </div>
 {% endblock %}
-</body>
-</html>

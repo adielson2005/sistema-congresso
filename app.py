@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session
+from flask import Flask, render_template, request, redirect, session, flash
 import sqlite3
 import bcrypt
 from flask import jsonify
@@ -83,20 +83,31 @@ def participantes():
     if "user_id" not in session:
         return redirect("/login")
 
+    busca = request.args.get("busca", "").strip()
+
     conn = get_db()
-    participantes = conn.execute("""
-        SELECT * FROM participantes
-        ORDER BY id DESC
-    """).fetchall()
+
+    if busca:
+        participantes = conn.execute("""
+            SELECT * FROM participantes
+            WHERE nome_completo LIKE ?
+            ORDER BY id DESC
+        """, (f"%{busca}%",)).fetchall()
+    else:
+        participantes = conn.execute("""
+            SELECT * FROM participantes
+            ORDER BY id DESC
+        """).fetchall()
+
     conn.close()
 
-    return render_template("participantes.html", participantes=participantes)
+    return render_template("participantes.html", participantes=participantes, busca=busca)
 
 @app.route("/participantes/cadastrar", methods=["GET", "POST"])
 def cadastrar_participante():
     if "user_id" not in session:
         return redirect("/login")
-
+    
     conn = get_db()
 
     if request.method == "POST":
@@ -110,8 +121,7 @@ def cadastrar_participante():
 
         try:
             conn.execute("""
-                INSERT INTO participantes
-                (nome_completo, data_nascimento, cpf, email, numero, nome_mae, congregacao)
+                INSERT INTO participantes (nome_completo, data_nascimento, cpf, email, numero, nome_mae, congregacao)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 nome_completo,
@@ -123,10 +133,12 @@ def cadastrar_participante():
                 congregacao
             ))
             conn.commit()
+            flash("Participante cadastrado com sucesso!", "sucess")
         except sqlite3.IntegrityError:
             conn.close()
-            return "CPF já cadastrado"
-
+            flash("CPF já cadastrado. Verifique os dados.", "danger")
+            return redirect ("/participantes/cadastrar")
+        
         conn.close()
         return redirect("/participantes")
 
@@ -134,7 +146,6 @@ def cadastrar_participante():
         SELECT * FROM macros
         ORDER BY nome
     """).fetchall()
-
     conn.close()
 
     return render_template("cadastrar_participante.html", macros=macros)
