@@ -1,10 +1,54 @@
+import os
 from flask import Flask, render_template, request, redirect, session, flash
 import sqlite3
 import bcrypt
 from flask import jsonify
 
+os.makedirs("database", exist_ok=True)
+
 app = Flask(__name__)
 app.secret_key = "chave-secreta"
+
+def init_db():
+
+def init_db():
+    conn = sqlite3.connect("database/banco.db")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            usuario TEXT UNIQUE,
+            senha_hash BLOB,
+            cargo TEXT
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS participantes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome_completo TEXT,
+            data_nascimento TEXT,
+            cpf TEXT UNIQUE,
+            email TEXT,
+            numero TEXT,
+            nome_mae TEXT,
+            congregacao TEXT
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS arrecadacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            participante_id INTEGER,
+            valor REAL,
+            data_lancamento TEXT,
+            observacao TEXT
+        )
+    """)
+
+    conn.commit()
+    conn.close()
 
 def get_db():
     conn = sqlite3.connect("database/banco.db")
@@ -296,4 +340,5 @@ def logout():
     return redirect("/login")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
