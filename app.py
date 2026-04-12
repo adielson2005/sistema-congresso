@@ -6,11 +6,6 @@ from flask import jsonify
 
 os.makedirs("database", exist_ok=True)
 
-app = Flask(__name__)
-app.secret_key = "chave-secreta"
-
-def init_db():
-
 def init_db():
     conn = sqlite3.connect("database/banco.db")
 
@@ -47,8 +42,27 @@ def init_db():
         )
     """)
 
+    # criar usuário padrão
+    cursor = conn.cursor()
+    user = cursor.execute("""
+        SELECT * FROM usuarios WHERE usuario = 'admin'
+    """).fetchone()
+
+    if not user:
+        senha_hash = bcrypt.hashpw("123456".encode("utf-8"), bcrypt.gensalt())
+
+        conn.execute("""
+            INSERT INTO usuarios (nome, usuario, senha_hash, cargo)
+            VALUES (?, ?, ?, ?)
+        """, ("Administrador", "admin", senha_hash, "admin"))
+
     conn.commit()
     conn.close()
+
+app = Flask(__name__)
+app.secret_key = "chave-secreta"
+
+init_db()
 
 def get_db():
     conn = sqlite3.connect("database/banco.db")
