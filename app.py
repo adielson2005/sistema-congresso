@@ -142,24 +142,58 @@ def participantes():
         return redirect("/login")
 
     busca = request.args.get("busca", "").strip()
+    macro = request.args.get("macro", "").strip()
+    congregacao = request.args.get("congregacao", "").strip()
 
     conn = get_db()
 
+    query = """
+        SELECT * FROM participantes
+        WHERE 1=1
+    """
+    params = []
+
     if busca:
-        participantes = conn.execute("""
-            SELECT * FROM participantes
-            WHERE nome_completo LIKE ?
-            ORDER BY id DESC
-        """, (f"%{busca}%",)).fetchall()
-    else:
-        participantes = conn.execute("""
-            SELECT * FROM participantes
-            ORDER BY id DESC
-        """).fetchall()
+        query += """
+            AND (
+                nome_completo LIKE ?
+                OR cpf LIKE ?
+                OR email LIKE ?
+                OR numero LIKE ?
+                OR nome_mae LIKE ?
+                OR congregacao LIKE ?
+            )
+        """
+        termo = f"%{busca}%"
+        params.extend([termo] *6)
+
+    if macro:
+        query += " AND congregacao IN (SELECT nome FROM congregacoes WHERE macro_id = ?)"
+        params.append(macro)
+
+    if congregacao:
+        query += "AND congregacao = ?"
+        params.append(congregacao)
+
+    query += " ORDER BY id DESC"
+
+    participantes = conn.execute(query, params).fetchall()
+
+    macros = conn.execute("SELECT * FROM macros ORDER BY nome").fetchall()
+    congregacoes = conn.execute("SELECT * FROM congregacoes ORDER BY nome").fetchall()
 
     conn.close()
 
-    return render_template("participantes.html", participantes=participantes, busca=busca)
+    return render_template(
+        "participantes.html",
+        participantes=participantes,
+        busca=busca,
+        macros=macros,
+        congregacoes=congregacoes,
+        macro_selecionada=macro,
+        congregacao_selecionada=congregacao
+    )
+
 
 @app.route("/participantes/cadastrar", methods=["GET", "POST"])
 def cadastrar_participante():
@@ -263,6 +297,60 @@ def api_congregacoes(macro_id):
         for c in congregacoes
     ])
 
+@app.route("/congregacoes/<nome_slug>")
+def detalhe_congregacao(nome_slug):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    nome_congregacao = nome_slug.replace("-", " ")
+
+    conn = get_db()
+
+    participantes = conn.execute("""
+        SELECT * FROM participantes
+        WHERE congregacao = ?
+        ORDER BY nome_completo ASC
+    """, (nome_congregacao,)).fetchall()
+
+    congregacao_info = conn.execute("""
+        SELECT congregacoes.nome, macros.nome AS macro_nome
+        FROM congregacoes
+        JOIN macros ON macros.id = congregacoes.macro_id
+        WHERE congregacoes.nome = ?
+    """, (nome_congregacao,)).fetchone()
+
+    conn.close()
+
+    if not congregacao_info:
+        return "Congregação não encontrada."
+
+    return render_template(
+        "detalhe_congregacao.html",
+        congregacao=congregacao_info["nome"],
+        macro=congregacao_info["macro_nome"],
+        participantes=participantes
+    )
+
+@app.route("/congregacoes")
+def congregacoes():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+
+    congregacoes = conn.execute("""
+        SELECT congregacoes.nome, macros.nome AS macro_nome,
+               COUNT(participantes.id) AS total_participantes
+        FROM congregacoes
+        JOIN macros ON macros.id = congregacoes.macro_id
+        LEFT JOIN participantes ON participantes.congregacao = congregacoes.nome
+        GROUP BY congregacoes.id, congregacoes.nome, macros.nome
+        ORDER BY macros.nome, congregacoes.nome
+    """).fetchall()
+
+    conn.close()
+
+    return render_template("congregacoes.html", congregacoes=congregacoes)
 
 @app.route("/participantes/<int:id>/arrecadar", methods=["POST"])
 def salvar_arrecadacao(id):

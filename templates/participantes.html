@@ -7,17 +7,47 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h3 class="mb-1">Lista de Participantes</h3>
-        <p class="text-muted mb-0">Visualize e acesse os detalhes de cada participante cadastrado.</p>
+        <p class="text-muted mb-0">Pesquise por nome, CPF, congregação, número e outras informações.</p>
     </div>
+
     <a href="/participantes/cadastrar" class="btn btn-primary">+ Novo participante</a>
 </div>
 
-<form method="GET" action="/participantes" class="row g-2 mb-3">
-    <div class="col-md-10">
-        <input type="text" name="busca" class="form-control" placeholder="Buscar por nome" value="{{ busca or '' }}">
+<form method="GET" action="/participantes" class="row g-3 mb-4">
+    <div class="col-md-4">
+        <label class="form-label">Busca geral</label>
+        <input type="text" name="busca" class="form-control"
+               placeholder="Nome, CPF, e-mail, número..."
+               value="{{ busca or '' }}">
     </div>
-    <div class="col-md-2">
-        <button type="submit" class="btn btn-dark w-100">Buscar</button>
+
+    <div class="col-md-4">
+        <label class="form-label">Macro</label>
+        <select name="macro" class="form-select">
+            <option value="">Todas as macros</option>
+            {% for m in macros %}
+                <option value="{{ m.id }}" {% if macro_selecionada == m.id|string %}selected{% endif %}>
+                    {{ m.nome }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">Congregação</label>
+        <select name="congregacao" class="form-select">
+            <option value="">Todas as congregações</option>
+            {% for c in congregacoes %}
+                <option value="{{ c.nome }}" {% if congregacao_selecionada == c.nome %}selected{% endif %}>
+                    {{ c.nome }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-dark">Pesquisar</button>
+        <a href="/participantes" class="btn btn-outline-secondary">Limpar filtros</a>
     </div>
 </form>
 
@@ -43,12 +73,17 @@
                         </a>
                     </td>
                     <td>{{ p.cpf }}</td>
-                    <td>{{ p.congregacao}}</td>
+                    <td>
+                        <a href="/congregacoes/{{ p.congregacao|replace(' ', '-') }}"
+                           class="text-decoration-none">
+                            {{ p.congregacao }}
+                        </a>
+                    </td>
                     <td>{{ p.numero }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    {% endblock %}
-                   
+</div>
+{% endblock %}

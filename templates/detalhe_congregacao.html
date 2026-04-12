@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Congregacao{% endblock %}
+{% block page_title %}Detalhes da Congregação{% endblock %}
+
+{% block page_content %}
+<div class="mb-04">
+    <h3 class="mb-1">{{ congregacao }}</h3>
+    <p class="text-muted mb-0">Macro: {{ macro }}</p>
+</div>
+
+<div class="mb-4 p-4 bg-light border rounded-4">
+    <h5 class="mb-2">Resumo</h5>
+    <p class="mb-0"><strong>Total de Participantes:</strong> {{ participantes|length }}</p>
+</div>
+
+<div class="d-flex gap-2 mb-4">
+    <a href="/participantes" class="btn btn-outline-secondary">Voltar para participantes</a>
+</div>
+
+<div class="border rounded-4 p-3 bg-white">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>CPF</th>
+                    <th>Número</th>
+                    <th>E-mail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in participantes %}
+                <tr>
+                    <td>{{ p.id }}</td>
+                    <td>
+                        <a href="/participantes/{{ p.id }}" class="text-decoration-none fw-semilbod">
+                            {{ p.nome_completo }}
+                        </a>
+                    </td>
+                    <td>{{ p.cpf }}</td>
+                    <td>{{ p.numero }}</td>
+                    <td>{{ p.email }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
