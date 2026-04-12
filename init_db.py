@@ -1,9 +1,6 @@
 import os
-import sqlite3
-
-os.makedirs("database", exist_ok=True)
-
-conn = sqlite3.connect("database/banco.db")
+DB_PATH = os.environ.get("DB_PATH", "database/banco.db")
+conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 cursor.execute("""
