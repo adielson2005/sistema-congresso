@@ -9,6 +9,10 @@ os.makedirs("database", exist_ok=True)
 
 def init_db():
     conn = sqlite3.connect("database/banco.db")
+    # cria tabelas
+    conn.close()
+
+    init_db()
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
@@ -776,5 +780,5 @@ def logout():
     return redirect("/login")
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
