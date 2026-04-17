@@ -1,8 +1,9 @@
 import os
-from flask import Flask, render_template, request, redirect, session, flash
+from flask import Flask, render_template, request, redirect, session, flash, jsonify
 import sqlite3
 import bcrypt
-from flask import jsonify
+from datetime import datetime
+
 
 os.makedirs("database", exist_ok=True)
 
@@ -42,8 +43,35 @@ def init_db():
         )
     """)
 
-    # criar usuário padrão
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS macros (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS congregacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            macro_id INTEGER
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS historico_alteracoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            participante_id INTEGER,
+            campo_alterado TEXT,
+            valor_antigo TEXT,
+            valor_novo TEXT,
+            alterado_por TEXT,
+            data_alteracao TEXT
+        )
+    """)
+
     cursor = conn.cursor()
+
     user = cursor.execute("""
         SELECT * FROM usuarios WHERE usuario = 'admin'
     """).fetchone()
@@ -126,15 +154,74 @@ def dashboard():
         LIMIT 5
     """).fetchall()
 
+    arrecadacoes_por_congregacao = conn.execute("""
+        SELECT
+            COALESCE(participantes.congregacao, 'Sem congregação') AS congregacao,
+            COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM participantes
+        LEFT JOIN arrecadacoes ON arrecadacoes.participante_id = participantes.id
+        GROUP BY participantes.congregacao
+        ORDER BY total DESC
+    """).fetchall()
+
+    arrecadacoes_por_macro = conn.execute("""
+        SELECT
+            macros.nome AS macro,
+            COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM macros
+        LEFT JOIN congregacoes ON congregacoes.macro_id = macros.id
+        LEFT JOIN participantes ON participantes.congregacao = congregacoes.nome
+        LEFT JOIN arrecadacoes ON arrecadacoes.participante_id = participantes.id
+        GROUP BY macros.id, macros.nome
+        ORDER BY total DESC, macros.nome ASC
+    """).fetchall()
+
+    evolucao_arrecadacao = conn.execute("""
+        SELECT data_lancamento, COALESCE(SUM(valor), 0) AS total
+        FROM arrecadacoes
+        GROUP BY data_lancamento
+        ORDER BY data_lancamento ASC
+    """).fetchall()
+
     conn.close()
 
     return render_template(
-        "dashboard.html",
+        "Dashboard.html",
         total_participantes=total_participantes,
         total_arrecadado=total_arrecadado,
         total_lancamentos=total_lancamentos,
-        ultimas_arrecadacoes=ultimas_arrecadacoes
+        ultimas_arrecadacoes=ultimas_arrecadacoes,
+        arrecadacoes_por_congregacao=arrecadacoes_por_congregacao,
+        arrecadacoes_por_macro=arrecadacoes_por_macro,
+        evolucao_arrecadacao=evolucao_arrecadacao
     )
+
+@app.route("/api/dashboard/evolucao")
+def api_dashboard_evolucao():
+    if "user_id" not in session:
+        return jsonify([])
+    
+    conn = get_db()
+
+    evolucao = conn.execute("""
+        SELECT data_lancamento, COALESCE(SUM(valor), 0) AS total
+        FROM arrecadacoes
+        GROUP BY data_lancamento
+        ORDER BY data_lancamento ASC
+    """).fetchall()
+
+    conn.close()
+
+    return jsonify([
+        {
+            "data":
+item["data_lancamento"],
+            "total":
+float(item["total"])
+        }
+        for item in evolucao
+    ])
+
 
 @app.route("/participantes")
 def participantes():
@@ -278,6 +365,65 @@ def detalhe_participante(id):
         total=total["total_arrecadado"]
     )
 
+@app.route("/arrecadacoes/<int:id>/excluir", methods=["POST"])
+def excluir_arrecadacao(id):
+    if "user_id" not in session:
+        return redirect("/login")
+    
+    conn = get_db()
+
+    registro = conn.execute("""
+        SELECT participante_id FROM arrecadacoes WHERE id = ?
+    """, (id,)).fetchone()
+
+    if not registro:
+        conn.close()
+        return "Registro não encontrado"
+    
+    participante_id = registro["participante_id"]
+
+    conn.execute("""DELETE FROM arrecadacoes WHERE id = ?""", (id,))
+    conn.commit()
+    conn.close()
+
+    return redirect(f"/participantes/{participante_id}")
+
+@app.route("/arrecadacoes/<int:id>/editar", methods=["GET", "POST"])
+def editar_arrecadacao(id):
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+
+    arrecadacao = conn.execute("""
+        SELECT * FROM arrecadacoes WHERE id = ?
+    """, (id,)).fetchone()
+
+    if not arrecadacao:
+        conn.close()
+        return "Registro não encontrado"
+
+    if request.method == "POST":
+        valor = request.form["valor"]
+        data_lancamento = request.form["data_lancamento"]
+        observacao = request.form["observacao"]
+
+        conn.execute("""
+            UPDATE arrecadacoes
+            SET valor = ?, data_lancamento = ?, observacao = ?
+            WHERE id = ?
+        """, (valor, data_lancamento, observacao, id))
+
+        conn.commit()
+
+        participante_id = arrecadacao["participante_id"]
+        conn.close()
+
+        return redirect(f"/participantes/{participante_id}")
+
+    conn.close()
+    return render_template("editar_arrecadacao.html", arrecadacao=arrecadacao)
+
 @app.route("/api/congregacoes/<int:macro_id>")
 def api_congregacoes(macro_id):
     if "user_id" not in session:
@@ -396,6 +542,36 @@ def editar_participante(id):
         nome_mae = request.form["nome_mae"]
         congregacao = request.form["congregacao"]
 
+        campos = {
+            "nome_completo": nome_completo,
+            "data_nascimento": data_nascimento,
+            "cpf": cpf,
+            "email": email,
+            "numero": numero,
+            "nome_mae": nome_mae,
+            "congregacao": congregacao
+        }
+
+        for campo, valor in campos.items():
+            valor_antigo = participante[campo]
+            if str(valor_antigo or "") != str(novo_valor or ""):
+                conn.execute("""
+                    INSERT INTO historico_alteracoes (
+                        participante_id,
+                        campo_alterado,
+                        valor_antigo,
+                        valor_novo,
+                        alterado_por,
+                        data_alteracao
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    id,
+                    campo,
+                    str(valor_antigo or ""),
+                    str(novo_valor or ""),
+                    session.get("nome", "Sistema"),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ))
         try:
             conn.execute("""
                 UPDATE participantes

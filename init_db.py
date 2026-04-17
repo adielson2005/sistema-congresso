@@ -33,6 +33,19 @@ CREATE TABLE IF NOT EXISTS participantes (
 )
 """)
 
+conn.execute("""
+    CREATE TABLE IF NOT EXISTS historico_alteracoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        participante_id INTEGER NOT NULL,
+        campo_alterado TEXT NOT NULL,
+        valor_antigo TEXT,
+        valor_novo TEXT,
+        alterado_por TEXT,
+        data_alteracao TEXT NOT NULL,
+        FOREIGN KEY (participante_id) REFERENCES participantes(id)
+    )
+""")
+
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS arrecadacoes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,6 +72,18 @@ CREATE TABLE IF NOT EXISTS congregacoes (
     macro_id INTEGER NOT NULL,
     FOREIGN KEY (macro_id) REFERENCES macros(id)
 )
+""")
+
+conn.execute("""
+    CREATE TABLE IF NOT EXISTS historico_alteracoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        participante_id INTEGER,
+        campo_alterado TEXT,
+        valor_antigo TEXT,
+        valor_novo TEXT,
+        alterado_por TEXT,
+        data_alteracao TEXT
+    )
 """)
 
 

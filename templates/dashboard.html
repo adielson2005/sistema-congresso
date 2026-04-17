@@ -6,7 +6,7 @@
 {% block page_content %}
 <div class="mb-4">
     <h3 class="mb-1">Painel Administrativo</h3>
-    <p class="text-muted mb-0">Acompanhe os principais dados do sistema de arrecadação.</p>
+    <p class="text-muted mb-0">Acompanhe os principais dados do sistema de arrecadacao.</p>
 </div>
 
 <div class="row g-3 mb-4">
@@ -26,7 +26,7 @@
 
     <div class="col-md-4">
         <div class="p-4 bg-light border rounded-4">
-            <h6 class="text-muted mb-2">Total de lançamentos</h6>
+            <h6 class="text-muted mb-2">Total de lancamentos</h6>
             <h2 class="mb-0">{{ total_lancamentos }}</h2>
         </div>
     </div>
@@ -37,7 +37,34 @@
     <a href="/participantes" class="btn btn-outline-dark">Ver participantes</a>
 </div>
 
-<h4 class="mb-3">Últimas arrecadações</h4>
+<div class="row g-3 mb-4">
+    <div class="col-lg-8">
+        <div class="border rounded-4 p-3 h-100 bg-white">
+            <h5 class="mb-3">Arrecadacao por congregacao</h5>
+            <div style="height: 340px;">
+                <canvas id="graficoCongregacao"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="border rounded-4 p-3 h-100 bg-white">
+            <h5 class="mb-3">Arrecadacao por macro</h5>
+            <div style="height: 340px;">
+                <canvas id="graficoMacro"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="border rounded-4 p-3 mb-4 bg-white">
+    <h5 class="mb-3">Evolucao da arrecadacao</h5>
+    <div style="height: 340px;">
+        <canvas id="graficoEvolucao"></canvas>
+    </div>
+</div>
+
+<h4 class="mb-3">Ultimas arrecadacoes</h4>
 
 <div class="table-responsive">
     <table class="table table-bordered table-hover align-middle">
@@ -46,19 +73,178 @@
                 <th>Participante</th>
                 <th>Valor</th>
                 <th>Data</th>
-                <th>Observação</th>
+                <th>Observacao</th>
             </tr>
         </thead>
         <tbody>
             {% for a in ultimas_arrecadacoes %}
             <tr>
                 <td>{{ a.nome_completo }}</td>
-                <td>R$ {{ a.valor }}</td>
+                <td>R$ {{ "%.2f"|format(a.valor) }}</td>
                 <td>{{ a.data_lancamento }}</td>
                 <td>{{ a.observacao }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="text-center text-muted">Nenhuma arrecadacao registrada.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const labelsCongregacao = {{ arrecadacoes_por_congregacao | map(attribute='congregacao') | list | tojson }};
+    const valoresCongregacao = {{ arrecadacoes_por_congregacao | map(attribute='total') | list | tojson }};
+
+    const labelsMacro = {{ arrecadacoes_por_macro | map(attribute='macro') | list | tojson }};
+    const valoresMacro = {{ arrecadacoes_por_macro | map(attribute='total') | list | tojson }};
+
+    const labelsEvolucao = {{ evolucao_arrecadacao | map(attribute='data_lancamento') | list | tojson }};
+    const valoresEvolucao = {{ evolucao_arrecadacao | map(attribute='total') | list | tojson }};
+
+    const canvasCongregacao = document.getElementById('graficoCongregacao');
+    const canvasMacro = document.getElementById('graficoMacro');
+    const canvasEvolucao = document.getElementById('graficoEvolucao');
+
+    let graficoEvolucao = null;
+
+    if (canvasCongregacao) {
+        const ctxCongregacao = canvasCongregacao.getContext('2d');
+        const gradientBar = ctxCongregacao.createLinearGradient(0, 0, 0, 400);
+        gradientBar.addColorStop(0, 'rgba(37, 99, 235, 0.95)');
+        gradientBar.addColorStop(1, 'rgba(79, 70, 229, 0.65)');
+
+        new Chart(ctxCongregacao, {
+            type: 'bar',
+            data: {
+                labels: labelsCongregacao,
+                datasets: [{
+                    label: 'Total arrecadado (R$)',
+                    data: valoresCongregacao,
+                    backgroundColor: gradientBar,
+                    borderColor: '#1d4ed8',
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    borderSkipped: false,
+                    hoverBackgroundColor: '#2563eb'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return ' R$ ' + Number(context.raw || 0).toFixed(2);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'R$ ' + value;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    if (canvasMacro) {
+        const ctxMacro = canvasMacro.getContext('2d');
+        new Chart(ctxMacro, {
+            type: 'doughnut',
+            data: {
+                labels: labelsMacro,
+                datasets: [{
+                    label: 'Arrecadacao por macro',
+                    data: valoresMacro,
+                    backgroundColor: [
+                        '#2563eb', '#4f46e5', '#7c3aed', '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b'
+                    ],
+                    borderColor: '#ffffff',
+                    borderWidth: 3,
+                    hoverOffset: 12
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '58%'
+            }
+        });
+    }
+
+    if (canvasEvolucao) {
+        const ctxEvolucao = canvasEvolucao.getContext('2d');
+        const gradientLine = ctxEvolucao.createLinearGradient(0, 0, 0, 350);
+        gradientLine.addColorStop(0, 'rgba(37, 99, 235, 0.35)');
+        gradientLine.addColorStop(1, 'rgba(37, 99, 235, 0.02)');
+
+        graficoEvolucao = new Chart(ctxEvolucao, {
+            type: 'line',
+            data: {
+                labels: labelsEvolucao,
+                datasets: [{
+                    label: 'Evolucao da arrecadacao (R$)',
+                    data: valoresEvolucao,
+                    fill: true,
+                    backgroundColor: gradientLine,
+                    borderColor: '#2563eb',
+                    borderWidth: 3,
+                    tension: 0.35,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#2563eb'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 500
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'R$ ' + value;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async function atualizarGraficoEvolucao() {
+        if (!graficoEvolucao) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/dashboard/evolucao');
+            const dados = await response.json();
+
+            graficoEvolucao.data.labels = dados.map((item) => item.data);
+            graficoEvolucao.data.datasets[0].data = dados.map((item) => item.total);
+            graficoEvolucao.update();
+        } catch (error) {
+            console.error('Erro ao atualizar grafico:', error);
+        }
+    }
+
+    setInterval(atualizarGraficoEvolucao, 5000);
+</script>
 {% endblock %}
