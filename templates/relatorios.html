@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+
+{% block title %}Relatórios{% endblock %}
+{% block page_title %}Relatórios{% endblock %}
+
+{% block page_content %}
+
+<style>
+    .hero-relatorio {
+        background: linear-gradient(90deg, #2563eb 0%, #4f46e5 100%);
+        border-radius: 28px;
+        color: #ffffff;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .hero-relatorio::after {
+        content: "";
+        position: absolute;
+        inset: auto -40px -60px auto;
+        width: 220px;
+        height: 220px;
+        background: rgba(255, 255, 255, 0.16);
+        border-radius: 50%;
+        filter: blur(8px);
+    }
+
+    .hero-relatorio .row {
+        min-height: 180px;
+    }
+
+    .hero-conteudo {
+        position: relative;
+        z-index: 1;
+    }
+
+    .hero-acoes {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .filtro-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 24px;
+        padding: 24px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+    }
+
+    .resumo-card {
+        border: 1px solid #dbeafe;
+        border-radius: 22px;
+        padding: 24px;
+        background: #ffffff;
+        height: 100%;
+        box-shadow: 0 12px 36px rgba(37, 99, 235, 0.08);
+    }
+
+    .resumo-label {
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        margin-bottom: 10px;
+    }
+
+    .resumo-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0;
+    }
+
+    .ranking-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 24px;
+        padding: 24px;
+        background: #ffffff;
+        box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+        height: 100%;
+    }
+
+    .ranking-table thead th {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        border-bottom-width: 1px;
+    }
+
+    .ranking-table tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .badge-rank {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        background: #dbeafe;
+        color: #1d4ed8;
+        font-weight: 700;
+    }
+
+    .empty-state {
+        border: 1px dashed #cbd5e1;
+        border-radius: 20px;
+        padding: 28px;
+        text-align: center;
+        color: #64748b;
+        background: #f8fafc;
+    }
+
+    .cabecalho-filtro,
+    .cabecalho-ranking,
+    .acoes-rodape {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+
+    .acoes-formulario {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .status-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 0.95rem;
+    }
+
+    .status-live::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #86efac;
+        box-shadow: 0 0 0 4px rgba(134, 239, 172, 0.18);
+    }
+
+    @media (max-width: 991.98px) {
+        .hero-acoes,
+        .acoes-formulario {
+            justify-content: flex-start;
+        }
+    }
+
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+
+        .hero-relatorio,
+        .filtro-card,
+        .resumo-card,
+        .ranking-card {
+            box-shadow: none !important;
+        }
+    }
+</style>
+
+<div class="hero-relatorio p-4 p-lg-5 mb-4">
+    <div class="row align-items-center g-4">
+        <div class="col-lg-8 hero-conteudo">
+            <span class="badge rounded-pill text-bg-light text-primary mb-3">Central de relatórios</span>
+            <h2 class="fw-bold mb-2">Visualize, filtre e gere relatórios em segundos</h2>
+            <p class="mb-0 text-white-50">Use os filtros abaixo para consolidar os dados de arrecadação por período, congregação e macro sem alterar o fluxo atual da aplicação.</p>
+            <div class="status-live mt-3">Atualização ao vivo ativa. Última sincronização em <span id="atualizadoEm">{{ atualizado_em }}</span></div>
+        </div>
+        <div class="col-lg-4 hero-acoes no-print">
+            <button type="submit" form="formRelatorio" class="btn btn-light btn-lg px-4">Gerar relatório</button>
+            <button type="button" class="btn btn-outline-light btn-lg px-4" onclick="window.print()">Imprimir</button>
+        </div>
+    </div>
+</div>
+
+<form id="formRelatorio" method="GET" action="/relatorios" class="filtro-card mb-4 no-print">
+    <div class="cabecalho-filtro mb-4">
+        <div>
+            <h4 class="mb-1">Filtros do relatório</h4>
+            <p class="text-muted mb-0">Selecione os critérios desejados e clique em gerar relatório.</p>
+        </div>
+        <div class="acoes-formulario">
+            <a href="/relatorios" class="btn btn-outline-secondary">Limpar filtros</a>
+            <button type="submit" class="btn btn-primary">Gerar relatório</button>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-3">
+            <label for="data_inicio" class="form-label">Data inicial</label>
+            <input type="date" id="data_inicio" name="data_inicio" class="form-control" value="{{ filtro_data_inicio }}">
+        </div>
+
+        <div class="col-md-3">
+            <label for="data_fim" class="form-label">Data final</label>
+            <input type="date" id="data_fim" name="data_fim" class="form-control" value="{{ filtro_data_fim }}">
+        </div>
+
+        <div class="col-md-3">
+            <label for="congregacao" class="form-label">Congregação</label>
+            <select id="congregacao" name="congregacao" class="form-select">
+                <option value="">Todas</option>
+                {% for item in congregacoes %}
+                <option value="{{ item.nome }}" {% if filtro_congregacao == item.nome %}selected{% endif %}>{{ item.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <label for="macro" class="form-label">Macro</label>
+            <select id="macro" name="macro" class="form-select">
+                <option value="">Todas</option>
+                {% for item in macros %}
+                <option value="{{ item.nome }}" {% if filtro_macro == item.nome %}selected{% endif %}>{{ item.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+</form>
+
+<div class="row g-4">
+    <div class="col-md-4">
+        <div class="resumo-card">
+            <div class="resumo-label">Total arrecadado</div>
+            <p class="resumo-value" id="totalArrecadado">R$ {{ "%.2f"|format(total) }}</p>
+            <p class="text-muted mb-0">Soma consolidada conforme os filtros informados.</p>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="resumo-card">
+            <div class="resumo-label">Lançamentos</div>
+            <p class="resumo-value" id="totalLancamentos">{{ total_lancamentos }}</p>
+            <p class="text-muted mb-0">Quantidade total de registros encontrados.</p>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="resumo-card">
+            <div class="resumo-label">Melhor desempenho</div>
+            <p class="resumo-value fs-3" id="melhorCongregacao">{{ melhor_congregacao }}</p>
+            <p class="text-muted mb-0" id="melhorCongregacaoTexto">
+                {% if por_congregacao %}
+                R$ {{ "%.2f"|format(melhor_congregacao_total) }} acumulados.
+                {% else %}
+                Ajuste os filtros para gerar resultados.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="ranking-card">
+            <div class="cabecalho-ranking mb-3">
+                <div>
+                    <h4 class="mb-1">Ranking por Congregação</h4>
+                    <p class="text-muted mb-0">Arrecadação total agrupada por congregação.</p>
+                </div>
+            </div>
+
+            <div id="rankingCongregacao">
+                {% if por_congregacao %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle ranking-table mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 72px;">Posição</th>
+                                <th>Congregação</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in por_congregacao %}
+                            <tr>
+                                <td><span class="badge-rank">{{ loop.index }}</span></td>
+                                <td>{{ item.congregacao }}</td>
+                                <td class="text-end fw-semibold">R$ {{ "%.2f"|format(item.total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    Nenhum dado encontrado para o ranking por congregação.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="ranking-card">
+            <div class="cabecalho-ranking mb-3">
+                <div>
+                    <h4 class="mb-1">Ranking por Macro</h4>
+                    <p class="text-muted mb-0">Arrecadação total agrupada por macro.</p>
+                </div>
+            </div>
+
+            <div id="rankingMacro">
+                {% if por_macro %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle ranking-table mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 72px;">Posição</th>
+                                <th>Macro</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in por_macro %}
+                            <tr>
+                                <td><span class="badge-rank">{{ loop.index }}</span></td>
+                                <td>{{ item.macro }}</td>
+                                <td class="text-end fw-semibold">R$ {{ "%.2f"|format(item.total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    Nenhum dado encontrado para o ranking por macro.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 no-print">
+        <div class="filtro-card">
+            <div class="acoes-rodape">
+                <div>
+                    <h5 class="mb-1">Gerar relatório novamente</h5>
+                    <p class="text-muted mb-0">Use o mesmo relatório em tela ou atualize os filtros para uma nova consulta.</p>
+                </div>
+                <div class="acoes-formulario">
+                    <button type="submit" form="formRelatorio" class="btn btn-primary">Gerar relatório</button>
+                    <button type="button" class="btn btn-outline-dark" onclick="window.print()">Salvar ou imprimir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function formatarMoeda(valor) {
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(Number(valor || 0));
+    }
+
+    function escaparHtml(valor) {
+        return String(valor ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function montarTabelaRanking(itens, chave, mensagemVazia) {
+        if (!itens || !itens.length) {
+            return '<div class="empty-state">' + mensagemVazia + '</div>';
+        }
+
+        const titulo = chave === 'congregacao' ? 'Congregação' : 'Macro';
+        const linhas = itens.map((item, index) => `
+            <tr>
+                <td><span class="badge-rank">${index + 1}</span></td>
+                <td>${escaparHtml(item[chave])}</td>
+                <td class="text-end fw-semibold">${formatarMoeda(item.total)}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <div class="table-responsive">
+                <table class="table table-hover align-middle ranking-table mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width: 72px;">Posição</th>
+                            <th>${titulo}</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>${linhas}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    async function atualizarRelatorioAoVivo() {
+        try {
+            const resposta = await fetch('/api/relatorios' + window.location.search, {
+                headers: {
+                    'X-Requested-With': 'fetch'
+                }
+            });
+
+            if (!resposta.ok) {
+                throw new Error('Falha ao atualizar relatório');
+            }
+
+            const dados = await resposta.json();
+
+            document.getElementById('totalArrecadado').textContent = formatarMoeda(dados.total);
+            document.getElementById('totalLancamentos').textContent = dados.total_lancamentos;
+            document.getElementById('melhorCongregacao').textContent = dados.melhor_congregacao || 'Sem dados';
+            document.getElementById('melhorCongregacaoTexto').textContent = dados.por_congregacao.length
+                ? formatarMoeda(dados.melhor_congregacao_total) + ' acumulados.'
+                : 'Ajuste os filtros para gerar resultados.';
+            document.getElementById('rankingCongregacao').innerHTML = montarTabelaRanking(
+                dados.por_congregacao,
+                'congregacao',
+                'Nenhum dado encontrado para o ranking por congregação.'
+            );
+            document.getElementById('rankingMacro').innerHTML = montarTabelaRanking(
+                dados.por_macro,
+                'macro',
+                'Nenhum dado encontrado para o ranking por macro.'
+            );
+            document.getElementById('atualizadoEm').textContent = dados.atualizado_em;
+        } catch (erro) {
+            console.error('Erro ao atualizar relatório ao vivo:', erro);
+        }
+    }
+
+    atualizarRelatorioAoVivo();
+    setInterval(atualizarRelatorioAoVivo, 10000);
+</script>
+
+{% endblock %}

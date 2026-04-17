@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, redirect, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, session, flash, jsonify, send_from_directory
 import sqlite3
 import bcrypt
 from datetime import datetime
@@ -96,6 +96,103 @@ def get_db():
     conn = sqlite3.connect("database/banco.db")
     conn.row_factory = sqlite3.Row
     return conn
+
+def obter_filtros_relatorio(args):
+    return {
+        "data_inicio": (args.get("data_inicio") or "").strip(),
+        "data_fim": (args.get("data_fim") or "").strip(),
+        "congregacao": (args.get("congregacao") or "").strip(),
+        "macro": (args.get("macro") or "").strip()
+    }
+
+def consultar_dados_relatorio(conn, filtros):
+    clausulas = ["1=1"]
+    params = []
+
+    if filtros["data_inicio"]:
+        clausulas.append("arrecadacoes.data_lancamento >= ?")
+        params.append(filtros["data_inicio"])
+
+    if filtros["data_fim"]:
+        clausulas.append("arrecadacoes.data_lancamento <= ?")
+        params.append(filtros["data_fim"])
+
+    if filtros["congregacao"]:
+        clausulas.append("participantes.congregacao = ?")
+        params.append(filtros["congregacao"])
+
+    if filtros["macro"]:
+        clausulas.append("macros.nome = ?")
+        params.append(filtros["macro"])
+
+    filtro = "WHERE " + " AND ".join(clausulas)
+
+    total = conn.execute(f"""
+        SELECT COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        LEFT JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        LEFT JOIN macros ON macros.id = congregacoes.macro_id
+        {filtro}
+    """, params).fetchone()["total"]
+
+    total_lancamentos = conn.execute(f"""
+        SELECT COUNT(*) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        LEFT JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        LEFT JOIN macros ON macros.id = congregacoes.macro_id
+        {filtro}
+    """, params).fetchone()["total"]
+
+    por_congregacao = conn.execute(f"""
+        SELECT
+            COALESCE(participantes.congregacao, 'Sem congregação') AS congregacao,
+            COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        LEFT JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        LEFT JOIN macros ON macros.id = congregacoes.macro_id
+        {filtro}
+        GROUP BY participantes.congregacao
+        ORDER BY total DESC, congregacao ASC
+    """, params).fetchall()
+
+    por_macro = conn.execute(f"""
+        SELECT
+            COALESCE(macros.nome, 'Sem macro') AS macro,
+            COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        LEFT JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        LEFT JOIN macros ON macros.id = congregacoes.macro_id
+        {filtro}
+        GROUP BY macros.nome
+        ORDER BY total DESC, macro ASC
+    """, params).fetchall()
+
+    return {
+        "total": float(total or 0),
+        "total_lancamentos": int(total_lancamentos or 0),
+        "melhor_congregacao": por_congregacao[0]["congregacao"] if por_congregacao else "Sem dados",
+        "melhor_congregacao_total": float(por_congregacao[0]["total"] or 0) if por_congregacao else 0.0,
+        "por_congregacao": [
+            {
+                "congregacao": item["congregacao"],
+                "total": float(item["total"] or 0)
+            }
+            for item in por_congregacao
+        ],
+        "por_macro": [
+            {
+                "macro": item["macro"],
+                "total": float(item["total"] or 0)
+            }
+            for item in por_macro
+        ],
+        "filtros": filtros,
+        "atualizado_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    }
 
 @app.route("/")
 def home():
@@ -554,7 +651,7 @@ def editar_participante(id):
 
         for campo, valor in campos.items():
             valor_antigo = participante[campo]
-            if str(valor_antigo or "") != str(novo_valor or ""):
+            if str(valor_antigo or "") != str(valor or ""):
                 conn.execute("""
                     INSERT INTO historico_alteracoes (
                         participante_id,
@@ -568,7 +665,7 @@ def editar_participante(id):
                     id,
                     campo,
                     str(valor_antigo or ""),
-                    str(novo_valor or ""),
+                    str(valor or ""),
                     session.get("nome", "Sistema"),
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 ))
@@ -611,6 +708,67 @@ def excluir_participante(id):
     conn.close()
 
     return redirect("/participantes")
+
+@app.route("/relatorios")
+def relatorios():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    filtros = obter_filtros_relatorio(request.args)
+
+    macros = conn.execute("""
+        SELECT nome
+        FROM macros
+        ORDER BY nome ASC
+    """).fetchall()
+
+    congregacoes = conn.execute("""
+        SELECT nome
+        FROM congregacoes
+        ORDER BY nome ASC
+    """).fetchall()
+    relatorio = consultar_dados_relatorio(conn, filtros)
+
+    conn.close()
+
+    return render_template(
+        "relatorios.html",
+        total=relatorio["total"],
+        total_lancamentos=relatorio["total_lancamentos"],
+        por_congregacao=relatorio["por_congregacao"],
+        por_macro=relatorio["por_macro"],
+        melhor_congregacao=relatorio["melhor_congregacao"],
+        melhor_congregacao_total=relatorio["melhor_congregacao_total"],
+        atualizado_em=relatorio["atualizado_em"],
+        macros=macros,
+        congregacoes=congregacoes,
+        filtro_data_inicio=filtros["data_inicio"],
+        filtro_data_fim=filtros["data_fim"],
+        filtro_congregacao=filtros["congregacao"],
+        filtro_macro=filtros["macro"]
+    )
+
+@app.route("/api/relatorios")
+def api_relatorios():
+    if "user_id" not in session:
+        return jsonify({"erro": "nao_autorizado"}), 401
+
+    conn = get_db()
+    filtros = obter_filtros_relatorio(request.args)
+    relatorio = consultar_dados_relatorio(conn, filtros)
+    conn.close()
+
+    return jsonify(relatorio)
+                                                                                  
+@app.route("/sw.js")
+def service_worker():
+    """Serve o service worker no escopo raiz para que controle todas as páginas."""
+    response = send_from_directory("static", "sw.js")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
 
 @app.route("/logout")
 def logout():
