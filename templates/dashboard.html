@@ -5,75 +5,69 @@
 
 {% block page_content %}
 <div class="mb-4">
-    <h3 class="mb-1">Painel Administrativo</h3>
-    <p class="text-muted mb-0">Acompanhe os principais dados do sistema de arrecadacao.</p>
+    <h3 class="mb-1 fw-bold">Painel Administrativo</h3>
+    <p class="text-muted mb-0">Acompanhe os principais dados do sistema de arrecadação.</p>
 </div>
 
 <div class="row g-3 mb-4">
     <div class="col-md-4">
-        <div class="p-4 bg-light border rounded-4">
-            <h6 class="text-muted mb-2">Total de participantes</h6>
-            <h2 class="mb-0">{{ total_participantes }}</h2>
-        </div>
+        <a href="/participantes" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="icon">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <h6>Total de participantes</h6>
+                <h2>{{ total_participantes }}</h2>
+            </div>
+        </a>
     </div>
 
     <div class="col-md-4">
-        <div class="p-4 bg-light border rounded-4">
-            <h6 class="text-muted mb-2">Total arrecadado</h6>
-            <h2 class="mb-0">R$ {{ "%.2f"|format(total_arrecadado) }}</h2>
-        </div>
+        <a href="/relatorios" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="icon">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+                <h6>Total arrecadado</h6>
+                <h2>R$ {{ "%.2f"|format(total_arrecadado) }}</h2>
+            </div>
+        </a>
     </div>
 
     <div class="col-md-4">
-        <div class="p-4 bg-light border rounded-4">
-            <h6 class="text-muted mb-2">Total de lancamentos</h6>
-            <h2 class="mb-0">{{ total_lancamentos }}</h2>
-        </div>
+        <a href="/relatorios" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="icon">
+                    <i class="bi bi-receipt-cutoff"></i>
+                </div>
+                <h6>Total de lançamentos</h6>
+                <h2>{{ total_lancamentos }}</h2>
+            </div>
+        </a>
     </div>
 </div>
 
 <div class="d-flex flex-wrap gap-2 mb-4">
-    <a href="/participantes/cadastrar" class="btn btn-primary">Cadastrar participante</a>
-    <a href="/participantes" class="btn btn-outline-dark">Ver participantes</a>
+    <a href="/participantes/cadastrar" class="btn btn-primary">
+        <i class="bi bi-person-plus-fill me-1"></i> Cadastrar participante
+    </a>
+    <a href="/participantes" class="btn btn-outline-dark">
+        <i class="bi bi-people me-1"></i> Ver participantes
+    </a>
+    <a href="/relatorios" class="btn btn-outline-secondary">
+        <i class="bi bi-bar-chart me-1"></i> Relatórios
+    </a>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-lg-8">
-        <div class="border rounded-4 p-3 h-100 bg-white">
-            <h5 class="mb-3">Arrecadacao por congregacao</h5>
-            <div style="height: 340px;">
-                <canvas id="graficoCongregacao"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-4">
-        <div class="border rounded-4 p-3 h-100 bg-white">
-            <h5 class="mb-3">Arrecadacao por macro</h5>
-            <div style="height: 340px;">
-                <canvas id="graficoMacro"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="border rounded-4 p-3 mb-4 bg-white">
-    <h5 class="mb-3">Evolucao da arrecadacao</h5>
-    <div style="height: 340px;">
-        <canvas id="graficoEvolucao"></canvas>
-    </div>
-</div>
-
-<h4 class="mb-3">Ultimas arrecadacoes</h4>
-
-<div class="table-responsive">
-    <table class="table table-bordered table-hover align-middle">
-        <thead class="table-light">
+<div class="section-title">Últimas arrecadações</div>
+<div class="table-responsive table-modern mb-4">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
             <tr>
                 <th>Participante</th>
                 <th>Valor</th>
                 <th>Data</th>
-                <th>Observacao</th>
+                <th>Observação</th>
             </tr>
         </thead>
         <tbody>
@@ -84,167 +78,153 @@
                 <td>{{ a.data_lancamento }}</td>
                 <td>{{ a.observacao }}</td>
             </tr>
-            {% else %}
-            <tr>
-                <td colspan="4" class="text-center text-muted">Nenhuma arrecadacao registrada.</td>
-            </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
+<div class="section-title">Evolução da arrecadação</div>
+<div class="border rounded-4 p-4 bg-white mb-4 shadow-sm" style="height: 360px;">
+    <canvas id="grafico"></canvas>
+</div>
+
+<div class="row g-4 mt-2">
+    <div class="col-lg-7">
+        <div class="section-title">Arrecadação por Congregação</div>
+        <div class="border rounded-4 p-4 bg-white shadow-sm" style="height: 380px;">
+            <canvas id="graficoCongregacao"></canvas>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="section-title">Arrecadação por Macro</div>
+        <div class="border rounded-4 p-4 bg-white shadow-sm" style="height: 380px;">
+            <canvas id="graficoMacro"></canvas>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
-    const labelsCongregacao = {{ arrecadacoes_por_congregacao | map(attribute='congregacao') | list | tojson }};
-    const valoresCongregacao = {{ arrecadacoes_por_congregacao | map(attribute='total') | list | tojson }};
+let grafico;
 
-    const labelsMacro = {{ arrecadacoes_por_macro | map(attribute='macro') | list | tojson }};
-    const valoresMacro = {{ arrecadacoes_por_macro | map(attribute='total') | list | tojson }};
+// gráfico de evolução
+async function carregar() {
+    const res = await fetch("/api/dashboard/evolucao");
+    const dados = await res.json();
 
-    const labelsEvolucao = {{ evolucao_arrecadacao | map(attribute='data_lancamento') | list | tojson }};
-    const valoresEvolucao = {{ evolucao_arrecadacao | map(attribute='total') | list | tojson }};
+    const labels = dados.map(d => d.data);
+    const valores = dados.map(d => d.total);
 
-    const canvasCongregacao = document.getElementById('graficoCongregacao');
-    const canvasMacro = document.getElementById('graficoMacro');
-    const canvasEvolucao = document.getElementById('graficoEvolucao');
+    if (!grafico) {
+        const ctx = document.getElementById("grafico");
 
-    let graficoEvolucao = null;
-
-    if (canvasCongregacao) {
-        const ctxCongregacao = canvasCongregacao.getContext('2d');
-        const gradientBar = ctxCongregacao.createLinearGradient(0, 0, 0, 400);
-        gradientBar.addColorStop(0, 'rgba(37, 99, 235, 0.95)');
-        gradientBar.addColorStop(1, 'rgba(79, 70, 229, 0.65)');
-
-        new Chart(ctxCongregacao, {
-            type: 'bar',
+        grafico = new Chart(ctx, {
+            type: "line",
             data: {
-                labels: labelsCongregacao,
+                labels,
                 datasets: [{
-                    label: 'Total arrecadado (R$)',
-                    data: valoresCongregacao,
-                    backgroundColor: gradientBar,
-                    borderColor: '#1d4ed8',
-                    borderWidth: 1,
-                    borderRadius: 12,
-                    borderSkipped: false,
-                    hoverBackgroundColor: '#2563eb'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: true
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return ' R$ ' + Number(context.raw || 0).toFixed(2);
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return 'R$ ' + value;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    if (canvasMacro) {
-        const ctxMacro = canvasMacro.getContext('2d');
-        new Chart(ctxMacro, {
-            type: 'doughnut',
-            data: {
-                labels: labelsMacro,
-                datasets: [{
-                    label: 'Arrecadacao por macro',
-                    data: valoresMacro,
-                    backgroundColor: [
-                        '#2563eb', '#4f46e5', '#7c3aed', '#0ea5e9', '#14b8a6', '#22c55e', '#f59e0b'
-                    ],
-                    borderColor: '#ffffff',
+                    label: "Arrecadação",
+                    data: valores,
                     borderWidth: 3,
-                    hoverOffset: 12
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '58%'
-            }
-        });
-    }
-
-    if (canvasEvolucao) {
-        const ctxEvolucao = canvasEvolucao.getContext('2d');
-        const gradientLine = ctxEvolucao.createLinearGradient(0, 0, 0, 350);
-        gradientLine.addColorStop(0, 'rgba(37, 99, 235, 0.35)');
-        gradientLine.addColorStop(1, 'rgba(37, 99, 235, 0.02)');
-
-        graficoEvolucao = new Chart(ctxEvolucao, {
-            type: 'line',
-            data: {
-                labels: labelsEvolucao,
-                datasets: [{
-                    label: 'Evolucao da arrecadacao (R$)',
-                    data: valoresEvolucao,
+                    tension: 0.4,
                     fill: true,
-                    backgroundColor: gradientLine,
-                    borderColor: '#2563eb',
-                    borderWidth: 3,
-                    tension: 0.35,
-                    pointRadius: 4,
-                    pointHoverRadius: 6,
-                    pointBackgroundColor: '#2563eb'
+                    backgroundColor: "rgba(37, 99, 235, 0.10)",
+                    borderColor: "#2563eb",
+                    pointBackgroundColor: "#2563eb",
+                    pointRadius: 4
                 }]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 500
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return 'R$ ' + value;
-                            }
-                        }
-                    }
-                }
+                maintainAspectRatio: false
             }
         });
+
+    } else {
+        grafico.data.labels = labels;
+        grafico.data.datasets[0].data = valores;
+        grafico.update();
     }
+}
 
-    async function atualizarGraficoEvolucao() {
-        if (!graficoEvolucao) {
-            return;
-        }
+carregar();
+setInterval(carregar, 5000);
 
-        try {
-            const response = await fetch('/api/dashboard/evolucao');
-            const dados = await response.json();
+// gráfico por congregação
+const labelsCongregacao = [
+    {% for item in arrecadacao_por_congregacao %}
+        "{{ item.congregacao }}",
+    {% endfor %}
+];
 
-            graficoEvolucao.data.labels = dados.map((item) => item.data);
-            graficoEvolucao.data.datasets[0].data = dados.map((item) => item.total);
-            graficoEvolucao.update();
-        } catch (error) {
-            console.error('Erro ao atualizar grafico:', error);
-        }
+const valoresCongregacao = [
+    {% for item in arrecadacao_por_congregacao %}
+        {{ item.total }},
+    {% endfor %}
+];
+
+const ctxCongregacao = document.getElementById("graficoCongregacao");
+
+new Chart(ctxCongregacao, {
+    type: "bar",
+    data: {
+        labels: labelsCongregacao,
+        datasets: [{
+            label: "Total arrecadado por congregação",
+            data: valoresCongregacao,
+            borderWidth: 2,
+            borderRadius: 10,
+            backgroundColor: "rgba(37, 99, 235, 0.75)",
+            borderColor: "#2563eb"
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
     }
+});
 
-    setInterval(atualizarGraficoEvolucao, 5000);
+// gráfico por macro
+const labelsMacro = [
+    {% for item in arrecadacao_por_macro %}
+        "{{ item.macro }}",
+    {% endfor %}
+];
+
+const valoresMacro = [
+    {% for item in arrecadacao_por_macro %}
+        {{ item.total }},
+    {% endfor %}
+];
+
+const ctxMacro = document.getElementById("graficoMacro");
+
+new Chart(ctxMacro, {
+    type: "doughnut",
+    data: {
+        labels: labelsMacro,
+        datasets: [{
+            label: "Arrecadação por macro",
+            data: valoresMacro,
+            backgroundColor: [
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#0ea5e9",
+                "#14b8a6",
+                "#22c55e",
+                "#f59e0b"
+            ],
+            borderWidth: 3,
+            borderColor: "#fff"
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
+    }
+});
 </script>
 {% endblock %}

@@ -48,8 +48,9 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS congregacoes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT UNIQUE,
+            nome TEXT,
             macro_id INTEGER,
+            UNIQUE(nome, macro_id),
             FOREIGN KEY (macro_id) REFERENCES macros(id)
         )
     """)
@@ -332,8 +333,17 @@ def participantes():
     query += " ORDER BY id DESC"
 
     lista_participantes = conn.execute(query, params).fetchall()
-    macros = conn.execute("SELECT * FROM macros ORDER BY nome").fetchall()
-    congregacoes = conn.execute("SELECT * FROM congregacoes ORDER BY nome").fetchall()
+
+    macros = conn.execute("""
+        SELECT * FROM macros
+        ORDER BY nome
+    """).fetchall()
+
+    congregacoes = conn.execute("""
+        SELECT DISTINCT nome
+        FROM congregacoes
+        ORDER BY nome
+    """).fetchall()
 
     conn.close()
 
@@ -393,8 +403,8 @@ def cadastrar_participante():
         SELECT * FROM macros
         ORDER BY nome
     """).fetchall()
-    conn.close()
 
+    conn.close()
     return render_template("cadastrar_participante.html", macros=macros)
 
 
@@ -485,7 +495,11 @@ def editar_participante(id):
         conn.close()
         return redirect(f"/participantes/{id}")
 
-    macros = conn.execute("SELECT * FROM macros ORDER BY nome").fetchall()
+    macros = conn.execute("""
+        SELECT * FROM macros
+        ORDER BY nome
+    """).fetchall()
+
     conn.close()
 
     return render_template(
@@ -520,7 +534,7 @@ def api_congregacoes(macro_id):
 
     conn = get_db()
     congregacoes = conn.execute("""
-        SELECT id, nome
+        SELECT DISTINCT id, nome
         FROM congregacoes
         WHERE macro_id = ?
         ORDER BY nome
@@ -621,7 +635,8 @@ def editar_arrecadacao(id):
 
     conn = get_db()
     arrecadacao = conn.execute("""
-        SELECT * FROM arrecadacoes WHERE id = ?
+        SELECT * FROM arrecadacoes
+        WHERE id = ?
     """, (id,)).fetchone()
 
     if not arrecadacao:
@@ -683,10 +698,10 @@ def relatorios():
 
     conn = get_db()
 
-    data_inicio = request.args.get("data_inicio")
-    data_fim = request.args.get("data_fim")
-    congregacao = request.args.get("congregacao")
-    macro = request.args.get("macro")
+    data_inicio = request.args.get("data_inicio", "").strip()
+    data_fim = request.args.get("data_fim", "").strip()
+    congregacao = request.args.get("congregacao", "").strip()
+    macro = request.args.get("macro", "").strip()
 
     filtro = "WHERE 1=1"
     params = []
@@ -746,8 +761,16 @@ def relatorios():
         ORDER BY total DESC
     """, params).fetchall()
 
-    macros = conn.execute("SELECT * FROM macros ORDER BY nome").fetchall()
-    congregacoes = conn.execute("SELECT * FROM congregacoes ORDER BY nome").fetchall()
+    macros = conn.execute("""
+        SELECT * FROM macros
+        ORDER BY nome
+    """).fetchall()
+
+    congregacoes = conn.execute("""
+        SELECT DISTINCT nome
+        FROM congregacoes
+        ORDER BY nome
+    """).fetchall()
 
     conn.close()
 

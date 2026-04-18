@@ -3,24 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Sistema{% endblock %}</title>
-
-    <!-- PWA -->
-    <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#2563eb">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Cadepa">
-    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-    <link rel="shortcut icon" href="/static/icons/icon.svg" type="image/svg+xml">
+    <title>{% block title %}CongressoSys{% endblock %}</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
     <style>
         body {
-            background: #f4f6f8;
-            margin: 0;
+            background: #f5f7fb;
             font-family: Arial, sans-serif;
+            margin: 0;
+            color: #0f172a;
         }
 
         .layout {
@@ -29,61 +22,87 @@
         }
 
         .sidebar {
-            width: 260px;
+            width: 270px;
             background: #ffffff;
-            border-right: 1px solid #e5e7eb;
-            padding: 24px 16px;
+            border-right: 1px solid #e9edf5;
+            padding: 22px 16px;
+            position: sticky;
+            top: 0;
+            height: 100vh;
         }
 
         .logo {
-            font-size: 25px;
-            font-weight: arial black;
-            margin-bottom: 30px;
-            color: #1f2937;
+            font-size: 24px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 28px;
+        }
+
+        .logo span {
+            color: #2563eb;
         }
 
         .menu-title {
-            font-size: 14px;
-            font-weight: bold;
-            color: #6b7280;
+            font-size: 12px;
+            color: #94a3b8;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .08em;
             margin-bottom: 12px;
         }
 
         .menu a {
-            display: block;
+            display: flex;
+            align-items: center;
+            gap: 10px;
             text-decoration: none;
-            color: #111827;
+            color: #334155;
             padding: 12px 14px;
-            border-radius: 12px;
+            border-radius: 14px;
             margin-bottom: 8px;
-            transition: 0.2s;
-            font-weight: 500;
+            transition: 0.2s ease;
+            font-weight: 600;
         }
 
         .menu a:hover,
         .menu a.active {
             background: linear-gradient(90deg, #2563eb, #4f46e5);
-            color: white;
+            color: #fff;
         }
 
         .main {
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-width: 0;
         }
 
         .topbar {
             background: #ffffff;
-            border-bottom: 1px solid #e5e7eb;
-            padding: 16px 24px;
+            border-bottom: 1px solid #e9edf5;
+            padding: 18px 26px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 20;
         }
 
         .topbar h1 {
-            font-size: 20px;
             margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .topbar-user {
+            background: #eff6ff;
+            color: #1d4ed8;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-weight: 600;
+            white-space: nowrap;
         }
 
         .content {
@@ -92,69 +111,221 @@
 
         .content-card {
             background: #ffffff;
-            border-radius: 20px;
+            border-radius: 24px;
             padding: 24px;
-            box-shadow: 0 4px 18px rgba(0,0,0,0.05);
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        }
+
+        .stat-card {
+            background: #fff;
+            border: 1px solid #e9edf5;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+            height: 100%;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        }
+
+        .stat-card .icon {
+            width: 46px;
+            height: 46px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #eff6ff;
+            color: #2563eb;
+            font-size: 20px;
+            margin-bottom: 14px;
+        }
+
+        .stat-card h6 {
+            color: #64748b;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .stat-card h2 {
+            margin: 0;
+            color: #0f172a;
+            font-weight: 700;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 14px;
+        }
+
+        .table-modern {
+            border-radius: 18px;
+            overflow: hidden;
+        }
+
+        .table-modern thead th {
+            background: #f8fafc;
+            color: #475569;
+            border-bottom: 1px solid #e9edf5;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .table-modern td {
+            vertical-align: middle;
+        }
+
+        .btn-primary,
+        .btn-success,
+        .btn-warning,
+        .btn-danger,
+        .btn-outline-secondary,
+        .btn-outline-dark {
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .flash-wrap .alert {
+            border-radius: 14px;
+            border: none;
+        }
+
+        .form-control,
+        .form-select {
+            border-radius: 12px;
+            border-color: #dbe3ef;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 0.15rem rgba(37, 99, 235, 0.15);
+        }
+
+        .card {
+            border-radius: 20px !important;
+        }
+
+        @media (max-width: 991px) {
+            .sidebar {
+                width: 92px;
+            }
+
+            .logo {
+                font-size: 18px;
+            }
+
+            .logo span,
+            .menu-title,
+            .menu a span {
+                display: none;
+            }
+
+            .menu a {
+                justify-content: center;
+            }
+
+            .topbar {
+                padding: 16px 18px;
+            }
+
+            .content {
+                padding: 16px;
+            }
+
+            .content-card {
+                padding: 18px;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .topbar h1 {
+                font-size: 18px;
+            }
+
+            .topbar-user {
+                font-size: 14px;
+                padding: 8px 10px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="layout">
-        <aside class="sidebar">
-            <div class="logo">Sistema Cadepa</div>
+<div class="layout">
+    <aside class="sidebar">
+        <div class="logo">Congresso<span>Sys</span></div>
 
-            <div class="menu-title">Navegação</div>
+        <div class="menu-title">Navegação</div>
 
-            <nav class="menu">
-                <a href="/dashboard" class="{% if request.path == '/dashboard' %}active{% endif %}">Dashboard</a>
-                <a href="/participantes/cadastrar" class="{% if request.path == '/participantes/cadastrar' %}active{% endif %}">Cadastrar participante</a>
-                <a href="/participantes" class="{% if request.path == '/participantes' %}active{% endif %}">Ver participantes</a>
-                <a href="/relatorios" class="{% if request.path == '/relatorios' %}active{% endif %}">Relatórios</a>
-                <a href="/logout">Sair</a>
-            </nav>
-        </aside>
+        <nav class="menu">
+            <a href="/dashboard" class="{% if request.path == '/dashboard' %}active{% endif %}">
+                <i class="bi bi-grid-1x2-fill"></i>
+                <span>Dashboard</span>
+            </a>
 
-        <main class="main">
-            <div class="topbar">
-                <h1>{% block page_title %}Sistema{% endblock %}</h1>
-                <div>
-                    {% if session.get("nome") %}
-                        <strong>{{ session.get("nome") }}</strong>
-                    {% endif %}
-                </div>
+            <a href="/participantes/cadastrar" class="{% if request.path == '/participantes/cadastrar' %}active{% endif %}">
+                <i class="bi bi-person-plus-fill"></i>
+                <span>Cadastrar participante</span>
+            </a>
+
+            <a href="/participantes" class="{% if request.path == '/participantes' %}active{% endif %}">
+                <i class="bi bi-people-fill"></i>
+                <span>Ver participantes</span>
+            </a>
+
+            <a href="/congregacoes" class="{% if request.path == '/congregacoes' %}active{% endif %}">
+                <i class="bi bi-building"></i>
+                <span>Congregações</span>
+            </a>
+
+            <a href="/relatorios" class="{% if request.path == '/relatorios' %}active{% endif %}">
+                <i class="bi bi-bar-chart-fill"></i>
+                <span>Relatórios</span>
+            </a>
+
+            <a href="/logout">
+                <i class="bi bi-box-arrow-right"></i>
+                <span>Sair</span>
+            </a>
+        </nav>
+    </aside>
+
+    <main class="main">
+        <div class="topbar">
+            <h1>{% block page_title %}Sistema{% endblock %}</h1>
+
+            <div class="topbar-user">
+                <i class="bi bi-person-circle me-1"></i>
+                {{ session.get("nome", "Usuário") }}
             </div>
+        </div>
 
-            <div class="content">
-                <div class="content-card">
-                    {% with messages = get_flashed_messages(with_categories=true) %}
-                        {% if messages %}
-                            <div class="mb-3">
-                                {% for category, message in messages %}
-                                    <div class="alert alert-{{ category }} alert-dimissible fade show" role="alert">
-                                        {{ message }}
-                                        <button type="button" class="btn-close" data-bs-dimiss="alert"></button>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                                {% endif %}
-                    {% endwith %}
-
-                    {% block page_content %}{% endblock %}
+        <div class="content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                <div class="flash-wrap mb-3">
+                  {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                      {{ message }}
+                      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                  {% endfor %}
                 </div>
-            </div>
-        </main>
-    </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+              {% endif %}
+            {% endwith %}
 
-    <!-- Registro do Service Worker (PWA) -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                    .then(reg => console.log('[PWA] Service Worker registrado:', reg.scope))
-                    .catch(err => console.warn('[PWA] Falha ao registrar SW:', err));
-            });
-        }
-    </script>
+            <div class="content-card">
+                {% block page_content %}{% endblock %}
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

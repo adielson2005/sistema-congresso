@@ -16,6 +16,7 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "static", "icons")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 SIZES = [192, 512]
+SUBTEXT = "Sistema Cadepa"
 
 # Gradiente de cores do sistema
 COLOR_START = (37, 99, 235)   # #2563eb
@@ -62,11 +63,11 @@ def gerar_icone(size):
     draw.text(((size - w) // 2 - bbox[0], int(size * 0.18) - bbox[1]),
               "SC", font=font_sc, fill=TEXT_COLOR)
 
-    # Subtexto "Cadepa"
-    bbox2 = draw.textbbox((0, 0), "Cadepa", font=font_sub)
+    # Subtexto do sistema
+    bbox2 = draw.textbbox((0, 0), SUBTEXT, font=font_sub)
     w2 = bbox2[2] - bbox2[0]
     draw.text(((size - w2) // 2 - bbox2[0], int(size * 0.63) - bbox2[1]),
-              "Cadepa", font=font_sub, fill=(255, 255, 255, 210))
+              SUBTEXT, font=font_sub, fill=(255, 255, 255, 210))
 
     path = os.path.join(OUTPUT_DIR, f"icon-{size}.png")
     img.save(path, "PNG")

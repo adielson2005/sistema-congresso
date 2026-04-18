@@ -1,24 +1,63 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Editar Participante</title>
-</head>
-<body>
-    <h1>Editar Participante</h1>
+{% extends "base.html" %}
 
+{% block title %}Editar Participante{% endblock %}
+{% block page_title %}Editar Participante{% endblock %}
+
+{% block page_content %}
+<div class="mb-4">
+    <h3 class="mb-1 fw-bold">Editar participante</h3>
+    <p class="text-muted mb-0">Atualize os dados do participante de forma segura.</p>
+</div>
+
+<div class="card p-4 shadow-sm border-0">
     <form method="POST">
-        <input type="text" name="nome_completo" value="{{ participante.nome_completo }}" required><br><br>
-        <input type="date" name="data_nascimento" value="{{ participante.data_nascimento }}" required><br><br>
-        <input type="text" name="cpf" value="{{ participante.cpf }}" required><br><br>
-        <input type="email" name="email" value="{{ participante.email }}"><br><br>
-        <input type="text" name="numero" value="{{ participante.numero }}"><br><br>
-        <input type="text" name="nome_mae" value="{{ participante.nome_mae }}"><br><br>
-        <input type="text" name="congregacao" value="{{ participante.congregacao }}" required><br><br>
+        <div class="row g-3">
 
-        <button type="submit">Salvar alterações</button>
+            <div class="col-md-6">
+                <label class="form-label">Nome completo</label>
+                <input type="text" name="nome_completo" class="form-control" value="{{ participante.nome_completo }}" required>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Data nascimento</label>
+                <input type="date" name="data_nascimento" class="form-control" value="{{ participante.data_nascimento }}" required>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">CPF</label>
+                <input type="text" name="cpf" class="form-control" value="{{ participante.cpf }}" required>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Email</label>
+                <input type="email" name="email" class="form-control" value="{{ participante.email }}">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Telefone</label>
+                <input type="text" name="numero" class="form-control" value="{{ participante.numero }}">
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Nome da mãe</label>
+                <input type="text" name="nome_mae" class="form-control" value="{{ participante.nome_mae }}">
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Congregação</label>
+                <input type="text" name="congregacao" class="form-control" value="{{ participante.congregacao }}" required>
+            </div>
+
+        </div>
+
+        <div class="mt-4 d-flex gap-2">
+            <button class="btn btn-primary">
+                <i class="bi bi-save-fill me-1"></i> Salvar alterações
+            </button>
+            <a href="/participantes/{{ participante.id }}" class="btn btn-outline-secondary">
+                Cancelar
+            </a>
+        </div>
     </form>
-
-    <br>
-    <a href="/participantes/{{ participante.id }}">Voltar</a>
-</body>
-</html>
+</div>
+{% endblock %}

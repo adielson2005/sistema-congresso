@@ -1,95 +1,96 @@
-  {% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Cadastrar Participante{% endblock %}
 {% block page_title %}Cadastrar Participante{% endblock %}
 
 {% block page_content %}
 <div class="mb-4">
-    <h3 class="mb-1">Novo Participante</h3>
-    <p class="text-muted mb-0">Preencha os dados abaixo para cadastrar um novo participante.</p>
+    <h3 class="mb-1 fw-bold">Novo participante</h3>
+    <p class="text-muted mb-0">Preencha os dados abaixo e vincule o participante à macro e congregação corretas.</p>
 </div>
 
-<form method="POST" action="/participantes/cadastrar">
-    <div class="row g-3">
-        <div class="col-md-6">
-            <label class="form-label">Nome completo</label>
-            <input type="text" name="nome_completo" class="form-control" required>
+<div class="card p-4 shadow-sm border-0">
+    <form method="POST">
+        <div class="row g-3">
+
+            <div class="col-md-6">
+                <label class="form-label">Nome completo</label>
+                <input type="text" name="nome_completo" class="form-control" required>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Data nascimento</label>
+                <input type="date" name="data_nascimento" class="form-control" required>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">CPF</label>
+                <input type="text" name="cpf" class="form-control" required>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Email</label>
+                <input type="email" name="email" class="form-control">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Telefone</label>
+                <input type="text" name="numero" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Nome da mãe</label>
+                <input type="text" name="nome_mae" class="form-control">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Macro</label>
+                <select id="macro" class="form-select" required>
+                    <option value="">Selecione</option>
+                    {% for macro in macros %}
+                        <option value="{{ macro.id }}">{{ macro.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Congregação</label>
+                <select name="congregacao" id="congregacao" class="form-select" required>
+                    <option value="">Selecione a macro primeiro</option>
+                </select>
+            </div>
+
         </div>
 
-        <div class="col-md-6">
-            <label class="form-label">Data de nascimento</label>
-            <input type="date" name="data_nascimento" class="form-control" required>
+        <div class="mt-4 d-flex gap-2">
+            <button class="btn btn-primary">
+                <i class="bi bi-save-fill me-1"></i> Salvar
+            </button>
+            <a href="/participantes" class="btn btn-outline-secondary">Voltar</a>
         </div>
-
-        <div class="col-md-6">
-            <label class="form-label">CPF</label>
-            <input type="text" name="cpf" class="form-control" required>
-        </div>
-
-        <div class="col-md-6">
-            <label class="form-label">E-mail</label>
-            <input type="email" name="email" class="form-control">
-        </div>
-
-        <div class="col-md-6">
-            <label class="form-label">Número</label>
-            <input type="text" name="numero" class="form-control">
-        </div>
-
-        <div class="col-md-6">
-            <label class="form-label">Nome da mãe</label>
-            <input type="text" name="nome_mae" class="form-control">
-        </div>
-
-        <div class="col-md-6">
-            <label class="form-label">Macro</label>
-            <select name="macro" id="macro" class="form-select" required>
-                <option value="">Selecione a macro</option>
-                {% for macro in macros %}
-                    <option value="{{ macro.id }}">{{ macro.nome }}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="col-md-6">
-            <label class="form-label">Congregação</label>
-            <select name="congregacao" id="congregacao" class="form-select" required>
-                <option value="">Selecione primeiro a macro</option>
-            </select>
-        </div>
-    </div>
-
-    <div class="mt-4 d-flex gap-2">
-        <button type="submit" class="btn btn-success">Salvar participante</button>
-        <a href="/participantes" class="btn btn-outline-secondary">Cancelar</a>
-    </div>
-</form>
+    </form>
+</div>
 
 <script>
-    const macroSelect = document.getElementById("macro");
-    const congregacaoSelect = document.getElementById("congregacao");
+const macro = document.getElementById("macro");
+const congregacao = document.getElementById("congregacao");
 
-    macroSelect.addEventListener("change", async function () {
-        const macroId = this.value;
+macro.addEventListener("change", async () => {
+    const id = macro.value;
 
-        congregacaoSelect.innerHTML = '<option value="">Carregando...</option>';
+    if (!id) {
+        congregacao.innerHTML = "<option>Selecione a macro</option>";
+        return;
+    }
 
-        if (!macroId) {
-            congregacaoSelect.innerHTML = '<option value="">Selecione primeiro a macro</option>';
-            return;
-        }
+    const res = await fetch(`/api/congregacoes/${id}`);
+    const data = await res.json();
 
-        const response = await fetch(`/api/congregacoes/${macroId}`);
-        const congregacoes = await response.json();
+    congregacao.innerHTML = "<option value=''>Selecione</option>";
 
-        congregacaoSelect.innerHTML = '<option value="">Selecione a congregação</option>';
-
-        congregacoes.forEach(congregacao => {
-            const option = document.createElement("option");
-            option.value = congregacao.nome;
-            option.textContent = congregacao.nome;
-            congregacaoSelect.appendChild(option);
-        });
+    data.forEach(c => {
+        congregacao.innerHTML += `<option value="${c.nome}">${c.nome}</option>`;
     });
+});
 </script>
 {% endblock %}

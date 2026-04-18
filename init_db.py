@@ -1,4 +1,6 @@
 import os
+import sqlite3
+
 DB_PATH = os.environ.get("DB_PATH", "database/banco.db")
 conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
@@ -66,13 +68,13 @@ CREATE TABLE IF NOT EXISTS macros (
 """)
 
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS congregacoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    macro_id INTEGER NOT NULL,
-    FOREIGN KEY (macro_id) REFERENCES macros(id)
-)
-""")
+    CREATE TABLE IF NOT EXISTS congregacoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT,
+        macro_id INTEGER,
+        FOREIGN KEY (macro_id) REFERENCES macros(id)
+    )
+""")    
 
 conn.execute("""
     CREATE TABLE IF NOT EXISTS historico_alteracoes (
