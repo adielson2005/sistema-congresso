@@ -44,11 +44,22 @@
         </select>
     </div>
 
-    <div class="col-12 d-flex gap-2">
+    <div class="col-12 d-flex gap-2 flex-wrap">
         <button class="btn btn-primary">
             <i class="bi bi-funnel-fill me-1"></i> Aplicar filtros
         </button>
-        <a href="/relatorios" class="btn btn-outline-secondary">Limpar</a>
+
+        <a href="/relatorios" class="btn btn-outline-secondary">
+            Limpar
+        </a>
+
+        <button type="button" onclick="window.print()" class="btn btn-outline-dark">
+            <i class="bi bi-printer me-1"></i> Imprimir
+        </button>
+
+        <a href="/relatorios/pdf?{{ request.query_string.decode() }}" class="btn btn-danger">
+            <i class="bi bi-file-earmark-pdf me-1"></i> Baixar PDF
+        </a>
     </div>
 </form>
 
@@ -119,4 +130,32 @@
         </div>
     </div>
 </div>
+
+<style>
+@media print {
+    .sidebar,
+    .topbar,
+    form,
+    .btn,
+    .flash-wrap {
+        display: none !important;
+    }
+
+    body {
+        background: #fff !important;
+    }
+
+    .content,
+    .content-card {
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    .stat-card {
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
+    }
+}
+</style>
 {% endblock %}

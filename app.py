@@ -1,7 +1,9 @@
 import os
 import sqlite3
 import bcrypt
-from flask import Flask, render_template, request, redirect, session, flash, jsonify
+from io import BytesIO
+from flask import Flask, render_template, request, redirect, session, flash, jsonify, make_response
+from xhtml2pdf import pisa
 
 # =========================
 # CONFIG
@@ -783,6 +785,193 @@ def relatorios():
         macros=macros,
         congregacoes=congregacoes
     )
+
+@app.route("/relatorios/pdf")
+def relatorios_pdf():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+
+    data_inicio = request.args.get("data_inicio", "").strip()
+    data_fim = request.args.get("data_fim", "").strip()
+    congregacao = request.args.get("congregacao", "").strip()
+    macro = request.args.get("macro", "").strip()
+
+    filtro = "WHERE 1=1"
+    params = []
+
+    if data_inicio:
+        filtro += " AND data_lancamento >= ?"
+        params.append(data_inicio)
+
+    if data_fim:
+        filtro += " AND data_lancamento <= ?"
+        params.append(data_fim)
+
+    if congregacao:
+        filtro += " AND participantes.congregacao = ?"
+        params.append(congregacao)
+
+    if macro:
+        filtro += """
+            AND participantes.congregacao IN (
+                SELECT nome FROM congregacoes
+                WHERE macro_id = (SELECT id FROM macros WHERE nome = ?)
+            )
+        """
+        params.append(macro)
+
+    total = conn.execute(f"""
+        SELECT COALESCE(SUM(valor), 0) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        {filtro}
+    """, params).fetchone()["total"]
+
+    total_lancamentos = conn.execute(f"""
+        SELECT COUNT(*) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        {filtro}
+    """, params).fetchone()["total"]
+
+    por_congregacao = conn.execute(f"""
+        SELECT participantes.congregacao, COALESCE(SUM(valor), 0) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        {filtro}
+        GROUP BY participantes.congregacao
+        ORDER BY total DESC
+    """, params).fetchall()
+
+    por_macro = conn.execute(f"""
+        SELECT macros.nome AS macro, COALESCE(SUM(valor), 0) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        JOIN macros ON macros.id = congregacoes.macro_id
+        {filtro}
+        GROUP BY macros.nome
+        ORDER BY total DESC
+    """, params).fetchall()
+
+    detalhes = conn.execute(f"""
+        SELECT participantes.nome_completo, participantes.congregacao, arrecadacoes.valor, arrecadacoes.data_lancamento, arrecadacoes.observacao
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        {filtro}
+        ORDER BY arrecadacoes.data_lancamento DESC, arrecadacoes.id DESC
+    """, params).fetchall()
+
+    conn.close()
+
+    html = f"""
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            color: #111;
+        }}
+
+        .topo {{
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 10px;
+        }}
+
+        h1, h2, h3 {{
+            margin: 0 0 10px 0;
+        }}
+
+        .resumo {{
+            margin-bottom: 20px;
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }}
+
+        th, td {{
+            border: 1px solid #ccc;
+            padding: 6px;
+            text-align: left;
+        }}
+
+        th {{
+            background: #f2f2f2;
+        }}
+
+        .small {{
+            color: #555;
+            font-size: 11px;
+        }}
+    </style>
+</head>
+
+<body>
+
+    <div class="topo">
+        <h1>Sistema Cadepa</h1>
+        <h3>Relatório de Arrecadação</h3>
+        <p class="small">Sistema de gestão do congresso</p>
+    </div>
+
+    <div class="resumo">
+        <h3>Resumo</h3>
+        <p><strong>Total arrecadado:</strong> R$ {total:.2f}</p>
+        <p><strong>Total de lançamentos:</strong> {total_lancamentos}</p>
+        <p><strong>Filtro data início:</strong> {data_inicio or '-'}</p>
+        <p><strong>Filtro data fim:</strong> {data_fim or '-'}</p>
+        <p><strong>Filtro macro:</strong> {macro or '-'}</p>
+        <p><strong>Filtro congregação:</strong> {congregacao or '-'}</p>
+    </div>
+
+    <h3>Detalhamento das Arrecadações</h3>
+
+    <table>
+        <tr>
+            <th>Participante</th>
+            <th>Congregação</th>
+            <th>Valor</th>
+            <th>Data</th>
+            <th>Observação</th>
+        </tr>
+"""
+
+    for d in detalhes:
+        html += f"""
+        <tr>
+            <td>{d['nome_completo']}</td>
+            <td>{d['congregacao']}</td>
+            <td>R$ {d['valor']:.2f}</td>
+            <td>{d['data_lancamento']}</td>
+            <td>{d['observacao'] or '-'}</td>
+        </tr>
+"""
+
+    html += """
+        </table>
+    </body>
+    </html>
+    """
+
+    pdf = BytesIO()
+    pisa_status = pisa.CreatePDF(html, dest=pdf)
+
+    if pisa_status.err:
+        return "Erro ao gerar PDF"
+
+    response = make_response(pdf.getvalue())
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = "attachment; filename=relatorio_arrecadacao.pdf"
+    return response
 
 
 # =========================
