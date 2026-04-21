@@ -1,7 +1,9 @@
 import os
+import re
 import sqlite3
 import bcrypt
 from datetime import datetime
+from secrets import compare_digest, token_hex, token_urlsafe
 from io import BytesIO
 from flask import Flask, render_template, request, redirect, session, flash, jsonify, make_response
 from openpyxl import Workbook
@@ -18,7 +20,15 @@ if db_dir:
     os.makedirs(db_dir, exist_ok=True)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "chave-secreta")
+app.secret_key = os.environ.get("SECRET_KEY") or token_hex(32)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "").lower() in {"1", "true", "yes"}
+
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+DEMO_ALLOWED_ENDPOINTS = {"login", "demo", "logout"}
+PARTICIPANTES_POR_PAGINA = 10
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "cadepa@2026A")
 
 
 # =========================
@@ -28,6 +38,182 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def get_csrf_token():
+    token = session.get("_csrf_token")
+    if not token:
+        token = token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+def is_valid_csrf_request():
+    session_token = session.get("_csrf_token")
+    request_token = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
+    return bool(session_token and request_token and compare_digest(session_token, request_token))
+
+
+def parse_currency_input(value):
+    normalized = (value or "").strip()
+    if not normalized:
+        raise ValueError("Informe um valor válido.")
+
+    normalized = normalized.replace("R$", "").replace(" ", "")
+
+    if "," in normalized:
+        normalized = normalized.replace(".", "").replace(",", ".")
+
+    return float(normalized)
+
+
+def only_digits(value):
+    return re.sub(r"\D", "", value or "")
+
+
+def format_cpf(value):
+    digits = only_digits(value)
+    if len(digits) != 11:
+        return value
+    return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+
+
+def format_phone(value):
+    digits = only_digits(value)
+    if not digits:
+        return ""
+    if len(digits) == 10:
+        return f"({digits[:2]}) {digits[2:6]}-{digits[6:]}"
+    if len(digits) == 11:
+        return f"({digits[:2]}) {digits[2:7]}-{digits[7:]}"
+    return value
+
+
+def is_valid_cpf(value):
+    digits = only_digits(value)
+
+    if len(digits) != 11 or digits == digits[0] * 11:
+        return False
+
+    total = sum(int(digits[index]) * (10 - index) for index in range(9))
+    first_digit = (total * 10) % 11
+    if first_digit == 10:
+        first_digit = 0
+
+    total = sum(int(digits[index]) * (11 - index) for index in range(10))
+    second_digit = (total * 10) % 11
+    if second_digit == 10:
+        second_digit = 0
+
+    return digits[-2:] == f"{first_digit}{second_digit}"
+
+
+def is_valid_email(value):
+    email = (value or "").strip()
+    if not email:
+        return True
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email))
+
+
+def email_already_exists(conn, email, exclude_id=None):
+    email_value = (email or "").strip()
+    if not email_value:
+        return False
+
+    if exclude_id is None:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM participantes
+            WHERE LOWER(email) = LOWER(?)
+            LIMIT 1
+            """,
+            (email_value,),
+        ).fetchone()
+        return bool(row)
+
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM participantes
+        WHERE LOWER(email) = LOWER(?)
+          AND id != ?
+        LIMIT 1
+        """,
+        (email_value, exclude_id),
+    ).fetchone()
+    return bool(row)
+
+
+def validate_iso_date(value, field_name):
+    try:
+        datetime.strptime((value or "").strip(), "%Y-%m-%d")
+    except ValueError as error:
+        raise ValueError(f"{field_name} inválida.") from error
+
+
+def normalize_participante_fields(cpf, numero, email, data_nascimento):
+    if not is_valid_cpf(cpf):
+        raise ValueError("CPF inválido.")
+
+    if not is_valid_email(email):
+        raise ValueError("E-mail inválido.")
+
+    validate_iso_date(data_nascimento, "Data de nascimento")
+
+    phone_digits = only_digits(numero)
+    if phone_digits and len(phone_digits) not in {10, 11}:
+        raise ValueError("Telefone inválido. Use 10 ou 11 dígitos.")
+
+    return format_cpf(cpf), format_phone(numero)
+
+
+def normalize_existing_participantes(cursor):
+    participantes = cursor.execute("""
+        SELECT id, cpf, numero
+        FROM participantes
+    """).fetchall()
+
+    for participante_id, cpf, numero in participantes:
+        cpf_digits = only_digits(cpf)
+        phone_digits = only_digits(numero)
+
+        if not cpf_digits or not is_valid_cpf(cpf_digits):
+            continue
+
+        if phone_digits and len(phone_digits) not in {10, 11}:
+            continue
+
+        cpf_formatado = format_cpf(cpf_digits)
+        numero_formatado = format_phone(phone_digits)
+
+        if cpf != cpf_formatado or (numero or "") != numero_formatado:
+            cursor.execute("""
+                UPDATE participantes
+                SET cpf = ?, numero = ?
+                WHERE id = ?
+            """, (cpf_formatado, numero_formatado, participante_id))
+
+
+@app.context_processor
+def inject_template_helpers():
+    return {"csrf_token": get_csrf_token}
+
+
+@app.before_request
+def protect_unsafe_requests():
+    if request.method not in UNSAFE_METHODS:
+        return None
+
+    if not is_valid_csrf_request():
+        flash("Sessão inválida ou expirada. Atualize a página e tente novamente.", "danger")
+        return redirect(request.referrer or "/login")
+
+    if session.get("modo_demo") and request.endpoint not in DEMO_ALLOWED_ENDPOINTS:
+        flash("Modo demonstração: alterações estão bloqueadas.", "warning")
+        return redirect(request.referrer or "/dashboard")
+
+    return None
 
 
 def init_db():
@@ -85,17 +271,23 @@ def init_db():
         )
     """)
 
-    # usuário admin padrão
-    user = cursor.execute("""
-        SELECT * FROM usuarios WHERE usuario = ?
-    """, ("admin",)).fetchone()
+    seed_default_admin = os.environ.get("SEED_DEFAULT_ADMIN", "").lower() in {"1", "true", "yes"}
+    default_admin_user = os.environ.get("DEFAULT_ADMIN_USER")
+    default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD")
+    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Administrador")
+    default_admin_role = os.environ.get("DEFAULT_ADMIN_ROLE", "admin")
 
-    if not user:
-        senha_hash = bcrypt.hashpw("123456".encode("utf-8"), bcrypt.gensalt())
-        cursor.execute("""
-            INSERT INTO usuarios (nome, usuario, senha_hash, cargo)
-            VALUES (?, ?, ?, ?)
-        """, ("Administrador", "admin", senha_hash, "admin"))
+    if seed_default_admin and default_admin_user and default_admin_password:
+        user = cursor.execute("""
+            SELECT * FROM usuarios WHERE usuario = ?
+        """, (default_admin_user,)).fetchone()
+
+        if not user:
+            senha_hash = bcrypt.hashpw(default_admin_password.encode("utf-8"), bcrypt.gensalt())
+            cursor.execute("""
+                INSERT INTO usuarios (nome, usuario, senha_hash, cargo)
+                VALUES (?, ?, ?, ?)
+            """, (default_admin_name, default_admin_user, senha_hash, default_admin_role))
 
     # macros padrão
     macros = [
@@ -156,6 +348,8 @@ def init_db():
                     INSERT OR IGNORE INTO congregacoes (nome, macro_id)
                     VALUES (?, ?)
                 """, (nome, macro_id))
+
+    normalize_existing_participantes(cursor)
 
     conn.commit()
     conn.close()
@@ -309,14 +503,15 @@ def participantes():
     busca = request.args.get("busca", "").strip()
     macro = request.args.get("macro", "").strip()
     congregacao = request.args.get("congregacao", "").strip()
+    page = max(request.args.get("page", 1, type=int), 1)
 
     conn = get_db()
 
-    query = "SELECT * FROM participantes WHERE 1=1"
+    query_base = "FROM participantes WHERE 1=1"
     params = []
 
     if busca:
-        query += """
+        query_base += """
             AND (
                 nome_completo LIKE ?
                 OR cpf LIKE ?
@@ -330,16 +525,27 @@ def participantes():
         params.extend([termo, termo, termo, termo, termo, termo])
 
     if macro:
-        query += " AND congregacao IN (SELECT nome FROM congregacoes WHERE macro_id = ?)"
+        query_base += " AND congregacao IN (SELECT nome FROM congregacoes WHERE macro_id = ?)"
         params.append(macro)
 
     if congregacao:
-        query += " AND congregacao = ?"
+        query_base += " AND congregacao = ?"
         params.append(congregacao)
 
-    query += " ORDER BY id DESC"
+    total_participantes = conn.execute(
+        f"SELECT COUNT(*) AS total {query_base}",
+        params,
+    ).fetchone()["total"]
 
-    lista_participantes = conn.execute(query, params).fetchall()
+    total_paginas = max((total_participantes + PARTICIPANTES_POR_PAGINA - 1) // PARTICIPANTES_POR_PAGINA, 1)
+    if page > total_paginas:
+        page = total_paginas
+
+    offset = (page - 1) * PARTICIPANTES_POR_PAGINA
+    query = f"SELECT * {query_base} ORDER BY id DESC LIMIT ? OFFSET ?"
+    query_params = params + [PARTICIPANTES_POR_PAGINA, offset]
+
+    lista_participantes = conn.execute(query, query_params).fetchall()
 
     macros = conn.execute("""
         SELECT * FROM macros
@@ -361,7 +567,10 @@ def participantes():
         macros=macros,
         congregacoes=congregacoes,
         macro_selecionada=macro,
-        congregacao_selecionada=congregacao
+        congregacao_selecionada=congregacao,
+        pagina_atual=page,
+        total_paginas=total_paginas,
+        total_participantes=total_participantes
     )
 
 
@@ -376,10 +585,22 @@ def cadastrar_participante():
         nome_completo = request.form["nome_completo"]
         data_nascimento = request.form["data_nascimento"]
         cpf = request.form["cpf"]
-        email = request.form["email"]
+        email = request.form["email"].strip()
         numero = request.form["numero"]
         nome_mae = request.form["nome_mae"]
         congregacao = request.form["congregacao"]
+
+        try:
+            cpf, numero = normalize_participante_fields(cpf, numero, email, data_nascimento)
+        except ValueError as error:
+            conn.close()
+            flash(str(error), "danger")
+            return redirect("/participantes/cadastrar")
+
+        if email_already_exists(conn, email):
+            conn.close()
+            flash("E-mail já cadastrado para outro participante.", "danger")
+            return redirect("/participantes/cadastrar")
 
         try:
             conn.execute("""
@@ -472,10 +693,22 @@ def editar_participante(id):
         nome_completo = request.form["nome_completo"]
         data_nascimento = request.form["data_nascimento"]
         cpf = request.form["cpf"]
-        email = request.form["email"]
+        email = request.form["email"].strip()
         numero = request.form["numero"]
         nome_mae = request.form["nome_mae"]
         congregacao = request.form["congregacao"]
+
+        try:
+            cpf, numero = normalize_participante_fields(cpf, numero, email, data_nascimento)
+        except ValueError as error:
+            conn.close()
+            flash(str(error), "danger")
+            return redirect(f"/participantes/{id}/editar")
+
+        if email_already_exists(conn, email, exclude_id=id):
+            conn.close()
+            flash("E-mail já cadastrado para outro participante.", "danger")
+            return redirect(f"/participantes/{id}/editar")
 
         try:
             conn.execute("""
@@ -507,12 +740,20 @@ def editar_participante(id):
         ORDER BY nome
     """).fetchall()
 
+    macro_atual = conn.execute("""
+        SELECT macro_id
+        FROM congregacoes
+        WHERE nome = ?
+        LIMIT 1
+    """, (participante["congregacao"],)).fetchone()
+
     conn.close()
 
     return render_template(
         "editar_participante.html",
         participante=participante,
-        macros=macros
+        macros=macros,
+        macro_atual_id=macro_atual["macro_id"] if macro_atual else ""
     )
 
 
@@ -612,6 +853,76 @@ def detalhe_congregacao(nome_slug):
 
 
 # =========================
+# AUDITORIA
+# =========================
+@app.route("/auditoria/inconsistencias")
+def auditoria_inconsistencias():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+
+    participantes = conn.execute("""
+        SELECT id, nome_completo, cpf, email, numero, data_nascimento
+        FROM participantes
+        ORDER BY nome_completo ASC
+    """).fetchall()
+
+    emails_duplicados = {
+        row["email_norm"]
+        for row in conn.execute("""
+            SELECT LOWER(TRIM(email)) AS email_norm, COUNT(*) AS total
+            FROM participantes
+            WHERE TRIM(COALESCE(email, '')) <> ''
+            GROUP BY LOWER(TRIM(email))
+            HAVING COUNT(*) > 1
+        """).fetchall()
+    }
+
+    conn.close()
+
+    inconsistencias = []
+    for participante in participantes:
+        problemas = []
+
+        if not is_valid_cpf(participante["cpf"]):
+            problemas.append("CPF inválido")
+
+        phone_digits = only_digits(participante["numero"])
+        if phone_digits and len(phone_digits) not in {10, 11}:
+            problemas.append("Telefone inválido")
+
+        if not is_valid_email(participante["email"]):
+            problemas.append("E-mail inválido")
+
+        email_normalizado = (participante["email"] or "").strip().lower()
+        if email_normalizado and email_normalizado in emails_duplicados:
+            problemas.append("E-mail duplicado")
+
+        try:
+            validate_iso_date(participante["data_nascimento"], "Data de nascimento")
+        except ValueError:
+            problemas.append("Data de nascimento inválida")
+
+        if problemas:
+            inconsistencias.append({
+                "id": participante["id"],
+                "nome": participante["nome_completo"],
+                "cpf": participante["cpf"],
+                "email": participante["email"],
+                "telefone": participante["numero"],
+                "data_nascimento": participante["data_nascimento"],
+                "problemas": problemas,
+            })
+
+    return render_template(
+        "auditoria_inconsistencias.html",
+        inconsistencias=inconsistencias,
+        total_participantes=len(participantes),
+    )
+
+
+# =========================
 # ARRECADAÇÕES
 # =========================
 @app.route("/participantes/<int:id>/arrecadar", methods=["POST"])
@@ -619,9 +930,20 @@ def salvar_arrecadacao(id):
     if "user_id" not in session:
         return redirect("/login")
 
-    valor = request.form["valor"]
+    try:
+        valor = parse_currency_input(request.form["valor"])
+    except ValueError:
+        flash("Informe um valor de arrecadação válido.", "danger")
+        return redirect(f"/participantes/{id}")
+
     data_lancamento = request.form["data_lancamento"]
     observacao = request.form["observacao"]
+
+    try:
+        validate_iso_date(data_lancamento, "Data de lançamento")
+    except ValueError as error:
+        flash(str(error), "danger")
+        return redirect(f"/participantes/{id}")
 
     conn = get_db()
     conn.execute("""
@@ -651,9 +973,22 @@ def editar_arrecadacao(id):
         return "Registro não encontrado"
 
     if request.method == "POST":
-        valor = request.form["valor"]
+        try:
+            valor = parse_currency_input(request.form["valor"])
+        except ValueError:
+            conn.close()
+            flash("Informe um valor de arrecadação válido.", "danger")
+            return redirect(f"/arrecadacoes/{id}/editar")
+
         data_lancamento = request.form["data_lancamento"]
         observacao = request.form["observacao"]
+
+        try:
+            validate_iso_date(data_lancamento, "Data de lançamento")
+        except ValueError as error:
+            conn.close()
+            flash(str(error), "danger")
+            return redirect(f"/arrecadacoes/{id}/editar")
 
         conn.execute("""
             UPDATE arrecadacoes
@@ -1279,6 +1614,14 @@ def relatorios_pdf():
 
 @app.route("/demo", methods=["GET", "POST"])
 def demo():
+    if request.method != "POST":
+        return redirect("/login")
+
+    senha_demo = request.form.get("senha_demo", "")
+    if senha_demo != DEMO_PASSWORD:
+        flash("Senha do modo demonstração inválida.", "danger")
+        return redirect("/login")
+
     session["user_id"] = 999
     session["nome"] = "Modo Demonstração"
     session["cargo"] = "demo"

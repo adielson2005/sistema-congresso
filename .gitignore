@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Local environment files
+.env
+.env.*
+
+# Local database and generated files
+database/banco.db
+*.sqlite3
+*.db
+
+# IDE and tooling
+.vscode/
+.idea/
+.qodo/
+
+# OS files
+.DS_Store
+Thumbs.db

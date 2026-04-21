@@ -10,7 +10,13 @@
 </div>
 
 <div class="surface-card">
+    {% if session.get("modo_demo") %}
+    <div class="alert alert-warning mb-4">
+        O modo demonstração permite visualizar esta tela, mas salvar alterações está desabilitado.
+    </div>
+    {% endif %}
     <form method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="row g-3">
 
             <div class="col-md-6">
@@ -25,7 +31,7 @@
 
             <div class="col-md-4">
                 <label class="form-label">CPF</label>
-                <input type="text" name="cpf" class="form-control" value="{{ participante.cpf }}" required>
+                <input type="text" name="cpf" class="form-control" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" value="{{ participante.cpf }}" required>
             </div>
 
             <div class="col-md-4">
@@ -35,7 +41,7 @@
 
             <div class="col-md-4">
                 <label class="form-label">Telefone</label>
-                <input type="text" name="numero" class="form-control" value="{{ participante.numero }}">
+                <input type="text" name="numero" class="form-control" inputmode="numeric" maxlength="15" placeholder="(00) 00000-0000" value="{{ participante.numero }}">
             </div>
 
             <div class="col-md-6">
@@ -43,15 +49,27 @@
                 <input type="text" name="nome_mae" class="form-control" value="{{ participante.nome_mae }}">
             </div>
 
-            <div class="col-md-6">
+            <div class="col-md-3">
+                <label class="form-label">Macro</label>
+                <select id="macro" class="form-select" required>
+                    <option value="">Selecione</option>
+                    {% for macro in macros %}
+                        <option value="{{ macro.id }}" {% if macro_atual_id and macro_atual_id == macro.id %}selected{% endif %}>{{ macro.nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3">
                 <label class="form-label">Congregação</label>
-                <input type="text" name="congregacao" class="form-control" value="{{ participante.congregacao }}" required>
+                <select name="congregacao" id="congregacao" class="form-select" required>
+                    <option value="{{ participante.congregacao }}">{{ participante.congregacao }}</option>
+                </select>
             </div>
 
         </div>
 
         <div class="mt-4 d-flex gap-2">
-            <button class="btn btn-primary">
+            <button class="btn btn-primary" {% if session.get("modo_demo") %}disabled{% endif %}>
                 <i class="bi bi-save-fill me-1"></i> Salvar alterações
             </button>
             <a href="/participantes/{{ participante.id }}" class="btn btn-outline-secondary">
@@ -60,4 +78,77 @@
         </div>
     </form>
 </div>
+
+<div
+    id="dadosEditarParticipante"
+    data-congregacao-atual='{{ participante.congregacao | tojson }}'
+></div>
+
+<script>
+const macroSelect = document.getElementById("macro");
+const congregacaoSelect = document.getElementById("congregacao");
+const dadosEditarParticipante = document.getElementById("dadosEditarParticipante");
+const congregacaoAtual = JSON.parse(dadosEditarParticipante.dataset.congregacaoAtual || '""');
+const cpfInput = document.querySelector('input[name="cpf"]');
+const telefoneInput = document.querySelector('input[name="numero"]');
+
+function aplicarMascaraCPF(valor) {
+    const digitos = valor.replace(/\D/g, "").slice(0, 11);
+    return digitos
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d)/, "$1.$2")
+        .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+function aplicarMascaraTelefone(valor) {
+    const digitos = valor.replace(/\D/g, "").slice(0, 11);
+
+    if (digitos.length <= 10) {
+        return digitos
+            .replace(/(\d{2})(\d)/, "($1) $2")
+            .replace(/(\d{4})(\d)/, "$1-$2");
+    }
+
+    return digitos
+        .replace(/(\d{2})(\d)/, "($1) $2")
+        .replace(/(\d{5})(\d)/, "$1-$2");
+}
+
+async function carregarCongregacoes(macroId, congregacaoSelecionada = "") {
+    if (!macroId) {
+        congregacaoSelect.innerHTML = "<option value=''>Selecione a macro</option>";
+        return;
+    }
+
+    const res = await fetch(`/api/congregacoes/${macroId}`);
+    const data = await res.json();
+
+    congregacaoSelect.innerHTML = "<option value=''>Selecione</option>";
+
+    data.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.nome;
+        option.textContent = item.nome;
+        if (item.nome === congregacaoSelecionada) {
+            option.selected = true;
+        }
+        congregacaoSelect.appendChild(option);
+    });
+}
+
+macroSelect.addEventListener("change", () => carregarCongregacoes(macroSelect.value));
+cpfInput.addEventListener("input", () => {
+    cpfInput.value = aplicarMascaraCPF(cpfInput.value);
+});
+telefoneInput.addEventListener("input", () => {
+    telefoneInput.value = aplicarMascaraTelefone(telefoneInput.value);
+});
+
+if (macroSelect.value) {
+    carregarCongregacoes(macroSelect.value, congregacaoAtual);
+}
+
+cpfInput.value = aplicarMascaraCPF(cpfInput.value);
+telefoneInput.value = aplicarMascaraTelefone(telefoneInput.value);
+</script>
 {% endblock %}

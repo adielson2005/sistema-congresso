@@ -40,30 +40,42 @@
     </div>
 
     <div class="col-12 d-flex flex-wrap gap-2">
+        {% if not session.get("modo_demo") %}
         <a href="/participantes/{{ participante.id }}/editar" class="btn btn-warning">
             <i class="bi bi-pencil-fill me-1"></i> Editar participante
         </a>
+        {% endif %}
 
         <a href="/participantes" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Voltar
         </a>
 
+        {% if not session.get("modo_demo") %}
         <form method="POST" action="/participantes/{{ participante.id }}/excluir" onsubmit="return confirm('Tem certeza que deseja excluir este participante?');">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-danger">
                 <i class="bi bi-trash-fill me-1"></i> Excluir participante
             </button>
         </form>
+        {% endif %}
     </div>
 
     <div class="col-12">
         <div class="surface-card">
             <div class="section-title">Adicionar arrecadação</div>
 
+            {% if session.get("modo_demo") %}
+            <div class="alert alert-warning">
+                Em modo demonstração, novos lançamentos e alterações no histórico ficam desabilitados.
+            </div>
+            {% endif %}
+
             <form method="POST" action="/participantes/{{ participante.id }}/arrecadar">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <div class="row g-3">
                     <div class="col-md-4">
                         <label class="form-label">Valor</label>
-                        <input type="number" step="0.01" name="valor" class="form-control" required>
+                        <input type="text" name="valor" class="form-control" inputmode="decimal" placeholder="R$ 0,00" required>
                     </div>
 
                     <div class="col-md-4">
@@ -78,7 +90,7 @@
                 </div>
 
                 <div class="mt-3">
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" {% if session.get("modo_demo") %}disabled{% endif %}>
                         <i class="bi bi-plus-circle-fill me-1"></i> Salvar arrecadação
                     </button>
                 </div>
@@ -107,15 +119,20 @@
                         <td>{{ a.data_lancamento }}</td>
                         <td>{{ a.observacao }}</td>
                         <td class="text-end">
+                            {% if not session.get("modo_demo") %}
                             <a href="/arrecadacoes/{{ a.id }}/editar" class="btn btn-sm btn-warning">
                                 <i class="bi bi-pencil-fill"></i>
                             </a>
 
                             <form method="POST" action="/arrecadacoes/{{ a.id }}/excluir" style="display:inline;" onsubmit="return confirm('Deseja excluir esta arrecadação?');">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-danger">
                                     <i class="bi bi-trash-fill"></i>
                                 </button>
                             </form>
+                            {% else %}
+                            <span class="badge text-bg-light border">Somente leitura</span>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -124,4 +141,26 @@
         </div>
     </div>
 </div>
+
+<script>
+const valorInput = document.querySelector('input[name="valor"]');
+
+function aplicarMascaraMoeda(valor) {
+    const digitos = valor.replace(/\D/g, "");
+
+    if (!digitos) {
+        return "";
+    }
+
+    const numero = (Number(digitos) / 100).toFixed(2);
+    return numero.replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+if (valorInput) {
+    valorInput.addEventListener("input", () => {
+        const valorFormatado = aplicarMascaraMoeda(valorInput.value);
+        valorInput.value = valorFormatado ? `R$ ${valorFormatado}` : "";
+    });
+}
+</script>
 {% endblock %}

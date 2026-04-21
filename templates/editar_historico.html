@@ -11,6 +11,7 @@
 
 <div class="surface-card">
     <form method="POST">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
             <label class="form-label">Campo alterado</label>
             <input type="text" name="campo_alterado" class="form-control" value="{{ registro.campo_alterado }}" required>

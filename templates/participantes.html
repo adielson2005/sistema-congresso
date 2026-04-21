@@ -10,9 +10,11 @@
         <p>Pesquise, filtre e acesse rapidamente os detalhes de cada participante.</p>
     </div>
 
+    {% if not session.get("modo_demo") %}
     <a href="/participantes/cadastrar" class="btn btn-primary">
         <i class="bi bi-person-plus-fill me-1"></i> Novo participante
     </a>
+    {% endif %}
 </div>
 
 <form method="GET" class="row g-2 mb-4 surface-card">
@@ -21,7 +23,7 @@
     </div>
 
     <div class="col-md-3">
-        <select name="macro" class="form-select">
+        <select name="macro" id="macroFiltro" class="form-select">
             <option value="">Macro</option>
             {% for m in macros %}
                 <option value="{{ m.id }}" {% if macro_selecionada == m.id|string %}selected{% endif %}>
@@ -32,7 +34,7 @@
     </div>
 
     <div class="col-md-3">
-        <select name="congregacao" class="form-select">
+        <select name="congregacao" id="congregacaoFiltro" class="form-select">
             <option value="">Congregação</option>
             {% for c in congregacoes %}
                 <option value="{{ c.nome }}" {% if congregacao_selecionada == c.nome %}selected{% endif %}>
@@ -76,4 +78,84 @@
         </tbody>
     </table>
 </div>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mt-3">
+    <div class="text-muted small">
+        {{ total_participantes }} participante{% if total_participantes != 1 %}s{% endif %} encontrado{% if total_participantes != 1 %}s{% endif %}.
+        Página {{ pagina_atual }} de {{ total_paginas }}.
+    </div>
+
+    {% if total_paginas > 1 %}
+    <nav aria-label="Paginação de participantes">
+        <ul class="pagination mb-0">
+            <li class="page-item {% if pagina_atual <= 1 %}disabled{% endif %}">
+                <a
+                    class="page-link"
+                    href="{{ url_for('participantes', busca=busca, macro=macro_selecionada, congregacao=congregacao_selecionada, page=pagina_atual - 1) }}"
+                >Anterior</a>
+            </li>
+
+            {% for numero_pagina in range(1, total_paginas + 1) %}
+                {% if numero_pagina == pagina_atual or (numero_pagina >= pagina_atual - 1 and numero_pagina <= pagina_atual + 1) or numero_pagina == 1 or numero_pagina == total_paginas %}
+                <li class="page-item {% if numero_pagina == pagina_atual %}active{% endif %}">
+                    <a
+                        class="page-link"
+                        href="{{ url_for('participantes', busca=busca, macro=macro_selecionada, congregacao=congregacao_selecionada, page=numero_pagina) }}"
+                    >{{ numero_pagina }}</a>
+                </li>
+                {% elif numero_pagina == pagina_atual - 2 or numero_pagina == pagina_atual + 2 %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
+
+            <li class="page-item {% if pagina_atual >= total_paginas %}disabled{% endif %}">
+                <a
+                    class="page-link"
+                    href="{{ url_for('participantes', busca=busca, macro=macro_selecionada, congregacao=congregacao_selecionada, page=pagina_atual + 1) }}"
+                >Próxima</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+
+<div
+    id="dadosFiltroParticipantes"
+    data-congregacao-selecionada='{{ congregacao_selecionada | tojson }}'
+></div>
+
+<script>
+const macroFiltro = document.getElementById("macroFiltro");
+const congregacaoFiltro = document.getElementById("congregacaoFiltro");
+const dadosFiltroParticipantes = document.getElementById("dadosFiltroParticipantes");
+const congregacaoFiltroSelecionada = JSON.parse(dadosFiltroParticipantes.dataset.congregacaoSelecionada || '""');
+
+async function carregarCongregacoesFiltro(macroId, congregacaoSelecionada = "") {
+    if (!macroId) {
+        congregacaoFiltro.innerHTML = '<option value="">Congregação</option>';
+        return;
+    }
+
+    const response = await fetch(`/api/congregacoes/${macroId}`);
+    const congregacoes = await response.json();
+
+    congregacaoFiltro.innerHTML = '<option value="">Congregação</option>';
+
+    congregacoes.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.nome;
+        option.textContent = item.nome;
+        if (item.nome === congregacaoSelecionada) {
+            option.selected = true;
+        }
+        congregacaoFiltro.appendChild(option);
+    });
+}
+
+macroFiltro.addEventListener("change", () => carregarCongregacoesFiltro(macroFiltro.value));
+
+if (macroFiltro.value) {
+    carregarCongregacoesFiltro(macroFiltro.value, congregacaoFiltroSelecionada);
+}
+</script>
 {% endblock %}

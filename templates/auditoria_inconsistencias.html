@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Auditoria{% endblock %}
+{% block page_title %}Auditoria{% endblock %}
+
+{% block page_content %}
+<div class="page-header">
+    <h3>Inconsistências de cadastro</h3>
+    <p>Revise os registros com dados inválidos para manter a base padronizada.</p>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="stat-card">
+            <h6>Total de participantes</h6>
+            <h2>{{ total_participantes }}</h2>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="stat-card">
+            <h6>Registros com inconsistência</h6>
+            <h2>{{ inconsistencias|length }}</h2>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive table-modern">
+    <table class="table table-hover align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Participante</th>
+                <th>CPF</th>
+                <th>E-mail</th>
+                <th>Telefone</th>
+                <th>Data nasc.</th>
+                <th>Problemas</th>
+                <th class="text-end">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in inconsistencias %}
+            <tr>
+                <td class="fw-semibold">{{ item.nome }}</td>
+                <td>{{ item.cpf }}</td>
+                <td>{{ item.email or '-' }}</td>
+                <td>{{ item.telefone or '-' }}</td>
+                <td>{{ item.data_nascimento or '-' }}</td>
+                <td>
+                    {% for problema in item.problemas %}
+                    <span class="badge text-bg-warning me-1 mb-1">{{ problema }}</span>
+                    {% endfor %}
+                </td>
+                <td class="text-end">
+                    <a href="/participantes/{{ item.id }}/editar" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-pencil-square me-1"></i> Corrigir
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" class="text-center py-5 text-muted">
+                    Nenhuma inconsistência encontrada. Cadastros em bom estado.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

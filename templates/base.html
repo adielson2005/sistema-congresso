@@ -69,6 +69,20 @@
             font-weight: 600;
         }
 
+        .menu .menu-disabled {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            margin-bottom: 8px;
+            color: #94a3b8;
+            background: #f8fafc;
+            cursor: not-allowed;
+            font-weight: 600;
+            border: 1px dashed #dbe3ef;
+        }
+
         .menu a:hover,
         .menu a.active {
             background: linear-gradient(90deg, #2563eb, #4f46e5);
@@ -345,10 +359,17 @@
                 <span>Dashboard</span>
             </a>
 
+            {% if session.get("modo_demo") %}
+            <div class="menu-disabled">
+                <i class="bi bi-person-plus-fill"></i>
+                <span>Cadastrar participante</span>
+            </div>
+            {% else %}
             <a href="/participantes/cadastrar" class="{% if request.path == '/participantes/cadastrar' %}active{% endif %}">
                 <i class="bi bi-person-plus-fill"></i>
                 <span>Cadastrar participante</span>
             </a>
+            {% endif %}
 
             <a href="/participantes" class="{% if request.path == '/participantes' %}active{% endif %}">
                 <i class="bi bi-people-fill"></i>
