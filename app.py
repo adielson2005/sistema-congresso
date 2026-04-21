@@ -29,6 +29,10 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 DEMO_ALLOWED_ENDPOINTS = {"login", "demo", "logout"}
 PARTICIPANTES_POR_PAGINA = 10
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "cadepa@2026A")
+SINGLE_LOGIN_USER = os.environ.get("SINGLE_LOGIN_USER", "Ujadepa26")
+SINGLE_LOGIN_PASSWORD = os.environ.get("SINGLE_LOGIN_PASSWORD", "cadepa2026@")
+SINGLE_LOGIN_NAME = os.environ.get("SINGLE_LOGIN_NAME", "Ujadepa26")
+SINGLE_LOGIN_ROLE = os.environ.get("SINGLE_LOGIN_ROLE", "admin")
 
 
 # =========================
@@ -216,6 +220,23 @@ def protect_unsafe_requests():
     return None
 
 
+def authenticate_single_login(usuario, senha):
+    if not SINGLE_LOGIN_USER or not SINGLE_LOGIN_PASSWORD:
+        return None
+
+    if not compare_digest(usuario, SINGLE_LOGIN_USER):
+        return False
+
+    if not compare_digest(senha, SINGLE_LOGIN_PASSWORD):
+        return False
+
+    return {
+        "id": 1,
+        "nome": SINGLE_LOGIN_NAME,
+        "cargo": SINGLE_LOGIN_ROLE,
+    }
+
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -271,13 +292,12 @@ def init_db():
         )
     """)
 
-    seed_default_admin = os.environ.get("SEED_DEFAULT_ADMIN", "").lower() in {"1", "true", "yes"}
-    default_admin_user = os.environ.get("DEFAULT_ADMIN_USER")
-    default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD")
-    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Administrador")
+    default_admin_user = os.environ.get("DEFAULT_ADMIN_USER", "Ujadepa26")
+    default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "cadepa2026@")
+    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Ujadepa26")
     default_admin_role = os.environ.get("DEFAULT_ADMIN_ROLE", "admin")
 
-    if seed_default_admin and default_admin_user and default_admin_password:
+    if default_admin_user and default_admin_password:
         user = cursor.execute("""
             SELECT * FROM usuarios WHERE usuario = ?
         """, (default_admin_user,)).fetchone()
@@ -372,6 +392,17 @@ def login():
         usuario = request.form["usuario"]
         senha = request.form["senha"]
 
+        single_login_user = authenticate_single_login(usuario, senha)
+        if single_login_user:
+            session.pop("modo_demo", None)
+            session["user_id"] = single_login_user["id"]
+            session["nome"] = single_login_user["nome"]
+            session["cargo"] = single_login_user["cargo"]
+            return redirect("/dashboard")
+        if single_login_user is False:
+            flash("Usuário ou senha inválidos.", "danger")
+            return redirect("/login")
+
         conn = get_db()
         user = conn.execute("""
             SELECT * FROM usuarios
@@ -387,10 +418,10 @@ def login():
                 session["nome"] = user["nome"]
                 session["cargo"] = user["cargo"]
                 return redirect("/dashboard")
-            flash("Senha incorreta.", "danger")
+            flash("Usuário ou senha inválidos.", "danger")
             return redirect("/login")
 
-        flash("Usuário não encontrado.", "danger")
+        flash("Usuário ou senha inválidos.", "danger")
         return redirect("/login")
 
     return render_template("login.html")
