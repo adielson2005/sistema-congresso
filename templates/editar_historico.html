@@ -4,34 +4,39 @@
 {% block page_title %}Editar Histórico{% endblock %}
 
 {% block page_content %}
-<h3 class="mb-4">Editar registro do histórico</h3>
+<div class="page-header">
+    <h3>Editar registro do histórico</h3>
+    <p>Atualize os dados de rastreabilidade da alteração.</p>
+</div>
 
-<form method="POST">
-    <div class="mb-3">
-        <label class="form-label">Campo alterado</label>
-        <input type="text" name="campo_alterado" class="form-control" value="{{ registro.campo_alterado }}" required>
-    </div>
+<div class="surface-card">
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label">Campo alterado</label>
+            <input type="text" name="campo_alterado" class="form-control" value="{{ registro.campo_alterado }}" required>
+        </div>
 
-    <div class="mb-3">
-        <label class="form-label">Valor antigo</label>
-        <input type="text" name="valor_antigo" class="form-control" value="{{ registro.valor_antigo }}">
-    </div>
+        <div class="mb-3">
+            <label class="form-label">Valor antigo</label>
+            <input type="text" name="valor_antigo" class="form-control" value="{{ registro.valor_antigo }}">
+        </div>
 
-    <div class="mb-3">
-        <label class="form-label">Valor novo</label>
-        <input type="text" name="valor_novo" class="form-control" value="{{ registro.valor_novo }}">
-    </div>
+        <div class="mb-3">
+            <label class="form-label">Valor novo</label>
+            <input type="text" name="valor_novo" class="form-control" value="{{ registro.valor_novo }}">
+        </div>
 
-    <div class="mb-3">
-        <label class="form-label">Alterado por</label>
-        <input type="text" name="alterado_por" class="form-control" value="{{ registro.alterado_por }}">
-    </div>
+        <div class="mb-3">
+            <label class="form-label">Alterado por</label>
+            <input type="text" name="alterado_por" class="form-control" value="{{ registro.alterado_por }}">
+        </div>
 
-    <div class="mb-3">
-        <label class="form-label">Data da alteração</label>
-        <input type="text" name="data_alteracao" class="form-control" value="{{ registro.data_alteracao }}">
-    </div>
+        <div class="mb-3">
+            <label class="form-label">Data da alteração</label>
+            <input type="text" name="data_alteracao" class="form-control" value="{{ registro.data_alteracao }}">
+        </div>
 
-    <button type="submit" class="btn btn-success">Salvar alterações</button>
-</form>
+        <button type="submit" class="btn btn-success">Salvar alterações</button>
+    </form>
+</div>
 {% endblock %}

@@ -4,10 +4,10 @@
 {% block page_title %}Participantes{% endblock %}
 
 {% block page_content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center gap-3 flex-wrap page-header">
     <div>
-        <h3 class="mb-1 fw-bold">Lista de Participantes</h3>
-        <p class="text-muted mb-0">Pesquise, filtre e acesse rapidamente os detalhes de cada participante.</p>
+        <h3>Lista de Participantes</h3>
+        <p>Pesquise, filtre e acesse rapidamente os detalhes de cada participante.</p>
     </div>
 
     <a href="/participantes/cadastrar" class="btn btn-primary">
@@ -15,7 +15,7 @@
     </a>
 </div>
 
-<form method="GET" class="row g-2 mb-4">
+<form method="GET" class="row g-2 mb-4 surface-card">
     <div class="col-md-4">
         <input type="text" name="busca" value="{{ busca }}" class="form-control" placeholder="Buscar por nome, CPF, email...">
     </div>

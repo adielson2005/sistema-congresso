@@ -4,157 +4,314 @@
 {% block page_title %}Relatórios{% endblock %}
 
 {% block page_content %}
-<div class="mb-4">
-    <h3 class="mb-1 fw-bold">Relatórios</h3>
-    <p class="text-muted mb-0">Visualize totais e rankings de arrecadação por congregação e macro.</p>
+<div class="page-header">
+    <h3>Painel de visualização da arrecadação</h3>
+    <p>Abra, visualize e, quando necessário, edite os dados dos participantes com leitura em estilo planilha.</p>
 </div>
 
-<form method="GET" class="row g-2 mb-4">
-    <div class="col-md-3">
-        <label class="form-label">Data início</label>
-        <input type="date" name="data_inicio" class="form-control" value="{{ request.args.get('data_inicio', '') }}">
-    </div>
+<div class="surface-card mb-4">
+    <form method="GET" class="row g-3 align-items-end">
+        <div class="col-lg-4 col-md-6">
+            <label class="form-label fw-semibold">Macro</label>
+            <select id="macroRelatorio" name="macro" class="form-select">
+                <option value="">Todas</option>
+                {% for m in macros %}
+                    <option value="{{ m.nome }}" {% if request.args.get('macro') == m.nome %}selected{% endif %}>
+                        {{ m.nome }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-    <div class="col-md-3">
-        <label class="form-label">Data fim</label>
-        <input type="date" name="data_fim" class="form-control" value="{{ request.args.get('data_fim', '') }}">
-    </div>
+        <div class="col-lg-4 col-md-6">
+            <label class="form-label fw-semibold">Congregação</label>
+            <select id="congregacaoRelatorio" name="congregacao" class="form-select">
+                <option value="">Todas</option>
+                {% for c in congregacoes %}
+                    <option
+                        value="{{ c.nome }}"
+                        data-macro="{{ c.macro_nome }}"
+                        {% if request.args.get('congregacao') == c.nome %}selected{% endif %}
+                    >
+                        {{ c.macro_nome }} - {{ c.nome }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
 
-    <div class="col-md-3">
-        <label class="form-label">Macro</label>
-        <select name="macro" class="form-select">
-            <option value="">Todas</option>
-            {% for m in macros %}
-                <option value="{{ m.nome }}" {% if request.args.get('macro') == m.nome %}selected{% endif %}>
-                    {{ m.nome }}
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div class="col-md-3">
-        <label class="form-label">Congregação</label>
-        <select name="congregacao" class="form-select">
-            <option value="">Todas</option>
-            {% for c in congregacoes %}
-                <option value="{{ c.nome }}" {% if request.args.get('congregacao') == c.nome %}selected{% endif %}>
-                    {{ c.nome }}
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div class="col-12 d-flex gap-2 flex-wrap">
-        <button class="btn btn-primary">
-            <i class="bi bi-funnel-fill me-1"></i> Aplicar filtros
-        </button>
-
-        <a href="/relatorios" class="btn btn-outline-secondary">
-            Limpar
-        </a>
-
-        <button type="button" onclick="window.print()" class="btn btn-outline-dark">
-            <i class="bi bi-printer me-1"></i> Imprimir
-        </button>
-
-        <a href="/relatorios/pdf?{{ request.query_string.decode() }}" class="btn btn-danger">
-            <i class="bi bi-file-earmark-pdf me-1"></i> Baixar PDF
-        </a>
-    </div>
-</form>
+        <div class="col-lg-4 col-md-12 d-flex gap-2 flex-wrap">
+            <button class="btn btn-primary flex-grow-1 btn-acao">
+                <i class="bi bi-funnel-fill me-1"></i> Filtrar
+            </button>
+            <a href="/relatorios" class="btn btn-outline-secondary flex-grow-1 btn-acao">
+                <i class="bi bi-arrow-clockwise me-1"></i> Limpar
+            </a>
+            <a
+                href="/relatorios/planilha?macro={{ request.args.get('macro', '')|urlencode }}&congregacao={{ request.args.get('congregacao', '')|urlencode }}"
+                class="btn btn-success flex-grow-1 btn-acao"
+            >
+                <i class="bi bi-download me-1"></i> Baixar Excel
+            </a>
+        </div>
+    </form>
+</div>
 
 <div class="row g-3 mb-4">
-    <div class="col-md-6">
-        <div class="stat-card">
-            <div class="icon">
-                <i class="bi bi-cash-coin"></i>
-            </div>
-            <h6>Total arrecadado</h6>
-            <h2>R$ {{ "%.2f"|format(total) }}</h2>
+    <div class="col-lg-4 col-md-6">
+        <div class="stat-card stat-card--relatorio">
+            <div class="icon"><i class="bi bi-cash-coin"></i></div>
+            <h6>Total geral arrecadado</h6>
+            <h2>R$ {{ "%.2f"|format(total_geral) }}</h2>
         </div>
     </div>
-
-    <div class="col-md-6">
-        <div class="stat-card">
-            <div class="icon">
-                <i class="bi bi-journal-text"></i>
+    <div class="col-lg-4 col-md-6">
+        <div class="stat-card stat-card--relatorio">
+            <div class="icon"><i class="bi bi-people-fill"></i></div>
+            <h6>Total de participantes</h6>
+            <h2>{{ participantes_relatorio|length }}</h2>
+        </div>
+    </div>
+    <div class="col-lg-4 col-md-12 d-flex align-items-stretch">
+        <div class="card card-atalhos w-100 border-0 shadow-sm">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h6 class="mb-1">Modo de visualização</h6>
+                    <p class="text-muted small mb-0">Use abrir para detalhe completo ou editar para atualização rápida.</p>
+                </div>
+                <button type="button" onclick="window.print()" class="btn btn-outline-dark mt-3">
+                    <i class="bi bi-printer me-1"></i> Imprimir relatório
+                </button>
             </div>
-            <h6>Total de lançamentos</h6>
-            <h2>{{ total_lancamentos }}</h2>
         </div>
     </div>
 </div>
 
-<div class="row g-4">
-    <div class="col-lg-6">
-        <div class="section-title">Ranking por Congregação</div>
-        <div class="table-responsive table-modern">
-            <table class="table table-hover align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Congregação</th>
-                        <th>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in por_congregacao %}
-                    <tr>
-                        <td>{{ item.congregacao }}</td>
-                        <td>R$ {{ "%.2f"|format(item.total) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <div class="col-lg-6">
-        <div class="section-title">Ranking por Macro</div>
-        <div class="table-responsive table-modern">
-            <table class="table table-hover align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>Macro</th>
-                        <th>Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in por_macro %}
-                    <tr>
-                        <td>{{ item.macro }}</td>
-                        <td>R$ {{ "%.2f"|format(item.total) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+<div class="section-title d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <span>Arrecadação por Macro</span>
+    <span class="badge text-bg-light border">Visão resumida</span>
 </div>
+<div class="border rounded-4 p-4 bg-white shadow-sm mb-4 grafico-wrap">
+    <canvas id="graficoMacro"></canvas>
+</div>
+
+<div class="section-title d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <span>Planilha de Participantes</span>
+    <span class="badge text-bg-light border">{{ participantes_relatorio|length }} registros</span>
+</div>
+<div class="table-responsive table-modern planilha-wrap">
+    <table class="table table-hover align-middle mb-0 table-planilha">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Macro</th>
+                <th>Congregação</th>
+                <th>Data nasc.</th>
+                <th>CPF</th>
+                <th>E-mail</th>
+                <th>Número</th>
+                <th>Nome da mãe</th>
+                <th>Total arrecadado</th>
+                <th class="text-center">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in participantes_relatorio %}
+            <tr>
+                <td class="nome-coluna">{{ p.nome_completo }}</td>
+                <td><span class="badge rounded-pill text-bg-light border">{{ p.macro or '-' }}</span></td>
+                <td>{{ p.congregacao }}</td>
+                <td>{{ p.data_nascimento }}</td>
+                <td>{{ p.cpf }}</td>
+                <td>{{ p.email or '-' }}</td>
+                <td>{{ p.numero or '-' }}</td>
+                <td>{{ p.nome_mae or '-' }}</td>
+                <td class="valor-coluna">R$ {{ "%.2f"|format(p.total_arrecadado) }}</td>
+                <td class="text-center">
+                    <div class="d-inline-flex gap-1">
+                        <a href="/participantes/{{ p.id }}" class="btn btn-sm btn-outline-primary" title="Abrir">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="/participantes/{{ p.id }}/editar" class="btn btn-sm btn-outline-secondary" title="Editar">
+                            <i class="bi bi-pencil-square"></i>
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="10" class="text-center py-5 text-muted">
+                    Nenhum participante encontrado para os filtros selecionados.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div
+    id="dadosGraficoMacro"
+    data-labels='{{ por_macro | map(attribute="macro") | list | tojson }}'
+    data-valores='{{ por_macro | map(attribute="total") | list | tojson }}'
+></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const macroRelatorio = document.getElementById("macroRelatorio");
+const congregacaoRelatorio = document.getElementById("congregacaoRelatorio");
+const dadosGraficoMacro = document.getElementById("dadosGraficoMacro");
+
+function atualizarCongregacoesPorMacro() {
+    const macroSelecionada = macroRelatorio.value;
+    const opcoes = congregacaoRelatorio.querySelectorAll("option[data-macro]");
+    let selecionadaValida = false;
+
+    opcoes.forEach((opcao) => {
+        const pertenceMacro = !macroSelecionada || opcao.dataset.macro === macroSelecionada;
+        opcao.hidden = !pertenceMacro;
+
+        if (pertenceMacro && opcao.value === congregacaoRelatorio.value) {
+            selecionadaValida = true;
+        }
+    });
+
+    if (!selecionadaValida) {
+        congregacaoRelatorio.value = "";
+    }
+}
+
+macroRelatorio.addEventListener("change", atualizarCongregacoesPorMacro);
+atualizarCongregacoesPorMacro();
+
+const labelsMacro = JSON.parse(dadosGraficoMacro.dataset.labels || "[]");
+const valoresMacro = JSON.parse(dadosGraficoMacro.dataset.valores || "[]");
+
+const ctxMacro = document.getElementById("graficoMacro");
+
+new Chart(ctxMacro, {
+    type: "doughnut",
+    data: {
+        labels: labelsMacro,
+        datasets: [{
+            label: "Arrecadação por macro",
+            data: valoresMacro,
+            backgroundColor: [
+                "#2563eb",
+                "#4f46e5",
+                "#7c3aed",
+                "#0ea5e9",
+                "#14b8a6",
+                "#22c55e",
+                "#f59e0b"
+            ],
+            borderWidth: 3,
+            borderColor: "#fff"
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false
+    }
+});
+</script>
 
 <style>
+.btn-acao {
+    min-width: 140px;
+}
+
+.stat-card--relatorio {
+    border-color: #e4ebf5;
+}
+
+.card-atalhos {
+    border-radius: 20px;
+    background: linear-gradient(160deg, #ffffff 0%, #f7faff 100%);
+}
+
+.grafico-wrap {
+    height: 360px;
+}
+
+.planilha-wrap {
+    border: 1px solid #e3ebf7;
+    border-radius: 18px;
+    background: #fff;
+}
+
+.table-planilha thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+    border-bottom: 2px solid #d9e2ec;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    color: #334155;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.table-planilha tbody td {
+    border-color: #e6edf3;
+    font-size: 0.88rem;
+    white-space: nowrap;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.table-planilha tbody tr:nth-child(even) {
+    background: #fafcff;
+}
+
+.table-planilha tbody tr:hover {
+    background: #eef5ff;
+}
+
+.nome-coluna {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.valor-coluna {
+    font-weight: 700;
+    color: #166534;
+}
+
+@media (max-width: 991px) {
+    .btn-acao {
+        min-width: 100%;
+    }
+
+    .grafico-wrap {
+        height: 320px;
+    }
+}
+
 @media print {
     .sidebar,
     .topbar,
     form,
     .btn,
-    .flash-wrap {
+    canvas,
+    script {
         display: none !important;
     }
 
     body {
-        background: #fff !important;
+        background: white !important;
     }
 
-    .content,
     .content-card {
-        padding: 0 !important;
         box-shadow: none !important;
-        border: none !important;
+        padding: 0 !important;
     }
 
-    .stat-card {
-        box-shadow: none !important;
-        border: 1px solid #ccc !important;
+    .page-header,
+    .surface-card,
+    .planilha-wrap {
+        border: 1px solid #ddd !important;
     }
 }
 </style>

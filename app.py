@@ -1,8 +1,12 @@
 import os
 import sqlite3
 import bcrypt
+from datetime import datetime
 from io import BytesIO
 from flask import Flask, render_template, request, redirect, session, flash, jsonify, make_response
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from xhtml2pdf import pisa
 
 # =========================
@@ -184,6 +188,7 @@ def login():
         if user:
             senha_hash = user["senha_hash"]
             if bcrypt.checkpw(senha.encode("utf-8"), senha_hash):
+                session.pop("modo_demo", None)
                 session["user_id"] = user["id"]
                 session["nome"] = user["nome"]
                 session["cargo"] = user["cargo"]
@@ -700,21 +705,11 @@ def relatorios():
 
     conn = get_db()
 
-    data_inicio = request.args.get("data_inicio", "").strip()
-    data_fim = request.args.get("data_fim", "").strip()
     congregacao = request.args.get("congregacao", "").strip()
     macro = request.args.get("macro", "").strip()
 
     filtro = "WHERE 1=1"
     params = []
-
-    if data_inicio:
-        filtro += " AND data_lancamento >= ?"
-        params.append(data_inicio)
-
-    if data_fim:
-        filtro += " AND data_lancamento <= ?"
-        params.append(data_fim)
 
     if congregacao:
         filtro += " AND participantes.congregacao = ?"
@@ -729,62 +724,371 @@ def relatorios():
         """
         params.append(macro)
 
-    total = conn.execute(f"""
-        SELECT COALESCE(SUM(valor), 0) AS total
-        FROM arrecadacoes
-        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+    participantes_relatorio = conn.execute(f"""
+        SELECT
+            participantes.id,
+            participantes.nome_completo,
+            participantes.data_nascimento,
+            participantes.cpf,
+            participantes.email,
+            participantes.numero,
+            participantes.nome_mae,
+            participantes.congregacao,
+            macros.nome AS macro,
+            COALESCE(SUM(arrecadacoes.valor), 0) AS total_arrecadado
+        FROM participantes
+        LEFT JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        LEFT JOIN macros ON macros.id = congregacoes.macro_id
+        LEFT JOIN arrecadacoes ON arrecadacoes.participante_id = participantes.id
         {filtro}
-    """, params).fetchone()["total"]
-
-    total_lancamentos = conn.execute(f"""
-        SELECT COUNT(*) AS total
-        FROM arrecadacoes
-        JOIN participantes ON participantes.id = arrecadacoes.participante_id
-        {filtro}
-    """, params).fetchone()["total"]
-
-    por_congregacao = conn.execute(f"""
-        SELECT participantes.congregacao, COALESCE(SUM(valor), 0) AS total
-        FROM arrecadacoes
-        JOIN participantes ON participantes.id = arrecadacoes.participante_id
-        {filtro}
-        GROUP BY participantes.congregacao
-        ORDER BY total DESC
+        GROUP BY
+            participantes.id,
+            participantes.nome_completo,
+            participantes.data_nascimento,
+            participantes.cpf,
+            participantes.email,
+            participantes.numero,
+            participantes.nome_mae,
+            participantes.congregacao,
+            macros.nome
+        ORDER BY participantes.nome_completo ASC
     """, params).fetchall()
 
     por_macro = conn.execute(f"""
-        SELECT macros.nome AS macro, COALESCE(SUM(valor), 0) AS total
+        SELECT macros.nome AS macro, COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM macros
+        LEFT JOIN congregacoes ON congregacoes.macro_id = macros.id
+        LEFT JOIN participantes ON participantes.congregacao = congregacoes.nome
+        LEFT JOIN arrecadacoes ON arrecadacoes.participante_id = participantes.id
+        WHERE 1=1
+          AND (? = '' OR macros.nome = ?)
+          AND (? = '' OR participantes.congregacao = ?)
+        GROUP BY macros.id, macros.nome
+        ORDER BY macros.nome
+    """, (macro, macro, congregacao, congregacao)).fetchall()
+
+    macros = conn.execute("SELECT * FROM macros ORDER BY nome").fetchall()
+    congregacoes = conn.execute("""
+        SELECT congregacoes.nome, macros.nome AS macro_nome
+        FROM congregacoes
+        JOIN macros ON macros.id = congregacoes.macro_id
+        ORDER BY macros.nome, congregacoes.nome
+    """).fetchall()
+
+    total_geral = conn.execute(f"""
+        SELECT COALESCE(SUM(arrecadacoes.valor), 0) AS total
         FROM arrecadacoes
         JOIN participantes ON participantes.id = arrecadacoes.participante_id
-        JOIN congregacoes ON congregacoes.nome = participantes.congregacao
-        JOIN macros ON macros.id = congregacoes.macro_id
         {filtro}
-        GROUP BY macros.nome
-        ORDER BY total DESC
-    """, params).fetchall()
-
-    macros = conn.execute("""
-        SELECT * FROM macros
-        ORDER BY nome
-    """).fetchall()
-
-    congregacoes = conn.execute("""
-        SELECT DISTINCT nome
-        FROM congregacoes
-        ORDER BY nome
-    """).fetchall()
+    """, params).fetchone()["total"]
 
     conn.close()
 
     return render_template(
         "relatorios.html",
-        total=total,
-        total_lancamentos=total_lancamentos,
-        por_congregacao=por_congregacao,
+        participantes_relatorio=participantes_relatorio,
         por_macro=por_macro,
         macros=macros,
-        congregacoes=congregacoes
+        congregacoes=congregacoes,
+        total_geral=total_geral
     )
+
+
+@app.route("/relatorios/planilha")
+def relatorios_planilha():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+
+    congregacao = request.args.get("congregacao", "").strip()
+    macro = request.args.get("macro", "").strip()
+
+    filtro = "WHERE 1=1"
+    params = []
+
+    if congregacao:
+        filtro += " AND participantes.congregacao = ?"
+        params.append(congregacao)
+
+    if macro:
+        filtro += """
+            AND participantes.congregacao IN (
+                SELECT nome FROM congregacoes
+                WHERE macro_id = (SELECT id FROM macros WHERE nome = ?)
+            )
+        """
+        params.append(macro)
+
+    participantes_relatorio = conn.execute(f"""
+        SELECT
+            participantes.id,
+            participantes.nome_completo,
+            COALESCE(macros.nome, '-') AS macro,
+            participantes.congregacao,
+            participantes.data_nascimento,
+            participantes.cpf,
+            participantes.email,
+            participantes.numero,
+            participantes.nome_mae,
+            COALESCE(SUM(arrecadacoes.valor), 0) AS total_arrecadado
+        FROM participantes
+        LEFT JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        LEFT JOIN macros ON macros.id = congregacoes.macro_id
+        LEFT JOIN arrecadacoes ON arrecadacoes.participante_id = participantes.id
+        {filtro}
+        GROUP BY
+            participantes.id,
+            participantes.nome_completo,
+            macros.nome,
+            participantes.congregacao,
+            participantes.data_nascimento,
+            participantes.cpf,
+            participantes.email,
+            participantes.numero,
+            participantes.nome_mae
+        ORDER BY participantes.nome_completo ASC
+    """, params).fetchall()
+
+    total_geral = conn.execute(f"""
+        SELECT COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM arrecadacoes
+        JOIN participantes ON participantes.id = arrecadacoes.participante_id
+        {filtro}
+    """, params).fetchone()["total"]
+
+    por_macro = conn.execute(f"""
+        SELECT COALESCE(macros.nome, 'Sem macro') AS macro, COALESCE(SUM(arrecadacoes.valor), 0) AS total
+        FROM participantes
+        LEFT JOIN congregacoes ON congregacoes.nome = participantes.congregacao
+        LEFT JOIN macros ON macros.id = congregacoes.macro_id
+        LEFT JOIN arrecadacoes ON arrecadacoes.participante_id = participantes.id
+        {filtro}
+        GROUP BY macros.nome
+        ORDER BY macros.nome
+    """, params).fetchall()
+
+    conn.close()
+
+    workbook = Workbook()
+    ws_resumo = workbook.active
+    ws_resumo.title = "Resumo"
+    ws_dados = workbook.create_sheet("Participantes")
+    ws_resumo.sheet_view.showGridLines = False
+    ws_dados.sheet_view.showGridLines = False
+    ws_resumo.sheet_view.zoomScale = 115
+    ws_dados.sheet_view.zoomScale = 90
+
+    # Estilos reutilizáveis para manter o arquivo organizado e legível no Excel.
+    titulo_font = Font(name="Calibri", size=16, bold=True, color="FFFFFF")
+    subtitulo_font = Font(name="Calibri", size=10, italic=True, color="DCEAFE")
+    cabecalho_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    texto_font = Font(name="Calibri", size=11, color="1E293B")
+    texto_destaque_font = Font(name="Calibri", size=11, bold=True, color="0F172A")
+    moeda_font = Font(name="Calibri", size=11, bold=True, color="166534")
+    linklike_font = Font(name="Calibri", size=11, bold=True, color="1D4ED8")
+    fill_titulo = PatternFill(fill_type="solid", start_color="1D4ED8", end_color="1D4ED8")
+    fill_cabecalho = PatternFill(fill_type="solid", start_color="0F172A", end_color="0F172A")
+    fill_info = PatternFill(fill_type="solid", start_color="EFF6FF", end_color="EFF6FF")
+    fill_info_label = PatternFill(fill_type="solid", start_color="DBEAFE", end_color="DBEAFE")
+    fill_resumo_total = PatternFill(fill_type="solid", start_color="DCFCE7", end_color="DCFCE7")
+    fill_linha_clara = PatternFill(fill_type="solid", start_color="F8FAFC", end_color="F8FAFC")
+    fill_linha_branca = PatternFill(fill_type="solid", start_color="FFFFFF", end_color="FFFFFF")
+    fill_total_coluna = PatternFill(fill_type="solid", start_color="F0FDF4", end_color="F0FDF4")
+    border = Border(
+        left=Side(style="thin", color="D1D5DB"),
+        right=Side(style="thin", color="D1D5DB"),
+        top=Side(style="thin", color="D1D5DB"),
+        bottom=Side(style="thin", color="D1D5DB"),
+    )
+
+    # ABA RESUMO
+    ws_resumo.merge_cells("A1:D1")
+    ws_resumo["A1"] = "Relatorio de Arrecadacao"
+    ws_resumo["A1"].font = titulo_font
+    ws_resumo["A1"].fill = fill_titulo
+    ws_resumo["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_resumo.merge_cells("A2:D2")
+    ws_resumo["A2"] = "Visao executiva para secretaria e tesouraria"
+    ws_resumo["A2"].font = subtitulo_font
+    ws_resumo["A2"].fill = fill_titulo
+    ws_resumo["A2"].alignment = Alignment(horizontal="center", vertical="center")
+
+    ws_resumo["A3"] = "Gerado em"
+    ws_resumo["B3"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+    ws_resumo["A4"] = "Filtro Macro"
+    ws_resumo["B4"] = macro or "Todas"
+    ws_resumo["A5"] = "Filtro Congregacao"
+    ws_resumo["B5"] = congregacao or "Todas"
+    ws_resumo["A6"] = "Participantes listados"
+    ws_resumo["B6"] = len(participantes_relatorio)
+    ws_resumo["A7"] = "Total arrecadado"
+    ws_resumo["B7"] = float(total_geral or 0)
+    ws_resumo["B7"].number_format = "R$ #,##0.00"
+
+    ws_resumo["A9"] = "Macro"
+    ws_resumo["B9"] = "Total"
+    ws_resumo["A9"].font = cabecalho_font
+    ws_resumo["B9"].font = cabecalho_font
+    ws_resumo["A9"].fill = fill_cabecalho
+    ws_resumo["B9"].fill = fill_cabecalho
+
+    linha_resumo = 10
+    for item in por_macro:
+        ws_resumo[f"A{linha_resumo}"] = item["macro"]
+        ws_resumo[f"B{linha_resumo}"] = float(item["total"] or 0)
+        ws_resumo[f"B{linha_resumo}"].number_format = "R$ #,##0.00"
+        linha_resumo += 1
+
+    for row in ws_resumo.iter_rows(min_row=3, max_row=max(10, linha_resumo - 1), min_col=1, max_col=2):
+        for cell in row:
+            if not (cell.font and cell.font.bold):
+                cell.font = texto_font
+            cell.border = border
+            cell.alignment = Alignment(vertical="center", horizontal="left")
+
+    for linha in range(3, 8):
+        ws_resumo[f"A{linha}"].font = texto_destaque_font
+        ws_resumo[f"A{linha}"].fill = fill_info_label
+        ws_resumo[f"B{linha}"].fill = fill_info
+
+    ws_resumo["A7"].fill = fill_resumo_total
+    ws_resumo["B7"].fill = fill_resumo_total
+    ws_resumo["B7"].font = moeda_font
+
+    for linha in range(10, linha_resumo):
+        ws_resumo[f"A{linha}"].fill = fill_linha_clara if linha % 2 == 0 else fill_linha_branca
+        ws_resumo[f"B{linha}"].fill = fill_linha_clara if linha % 2 == 0 else fill_linha_branca
+        ws_resumo[f"B{linha}"].font = moeda_font
+
+    ws_resumo.column_dimensions["A"].width = 28
+    ws_resumo.column_dimensions["B"].width = 22
+    ws_resumo.column_dimensions["C"].width = 6
+    ws_resumo.column_dimensions["D"].width = 6
+    ws_resumo.row_dimensions[1].height = 28
+    ws_resumo.row_dimensions[2].height = 20
+
+    # ABA DE DADOS (PLANILHA PRINCIPAL)
+    ws_dados.merge_cells("A1:J1")
+    ws_dados["A1"] = "Planilha de Participantes"
+    ws_dados["A1"].font = titulo_font
+    ws_dados["A1"].fill = fill_titulo
+    ws_dados["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_dados.merge_cells("A2:J2")
+    ws_dados["A2"] = f"Macro: {macro or 'Todas'}  |  Congregacao: {congregacao or 'Todas'}  |  Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    ws_dados["A2"].font = subtitulo_font
+    ws_dados["A2"].fill = fill_titulo
+    ws_dados["A2"].alignment = Alignment(horizontal="center", vertical="center")
+
+    ws_dados.row_dimensions[1].height = 28
+    ws_dados.row_dimensions[2].height = 20
+
+    headers = [
+        "ID",
+        "Nome",
+        "Macro",
+        "Congregacao",
+        "Data nascimento",
+        "CPF",
+        "E-mail",
+        "Numero",
+        "Nome da mae",
+        "Total arrecadado",
+    ]
+
+    header_row = 4
+    for col, header in enumerate(headers, start=1):
+        cell = ws_dados.cell(row=header_row, column=col, value=header)
+        cell.font = cabecalho_font
+        cell.fill = fill_cabecalho
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    data_start = header_row + 1
+    for idx, p in enumerate(participantes_relatorio, start=data_start):
+        ws_dados.cell(row=idx, column=1, value=p["id"])
+        ws_dados.cell(row=idx, column=2, value=p["nome_completo"])
+        ws_dados.cell(row=idx, column=3, value=p["macro"])
+        ws_dados.cell(row=idx, column=4, value=p["congregacao"])
+        ws_dados.cell(row=idx, column=5, value=p["data_nascimento"])
+        ws_dados.cell(row=idx, column=6, value=p["cpf"])
+        ws_dados.cell(row=idx, column=7, value=p["email"] or "-")
+        ws_dados.cell(row=idx, column=8, value=p["numero"] or "-")
+        ws_dados.cell(row=idx, column=9, value=p["nome_mae"] or "-")
+        total_cell = ws_dados.cell(row=idx, column=10, value=float(p["total_arrecadado"] or 0))
+        total_cell.number_format = "R$ #,##0.00"
+
+    possui_dados = len(participantes_relatorio) > 0
+    last_data_row = data_start + len(participantes_relatorio) - 1 if possui_dados else header_row
+
+    if possui_dados:
+        for row in ws_dados.iter_rows(min_row=data_start, max_row=last_data_row, min_col=1, max_col=10):
+            for cell in row:
+                cell.font = texto_font
+                cell.border = border
+                cell.fill = fill_linha_clara if cell.row % 2 == 0 else fill_linha_branca
+                if cell.column == 10:
+                    cell.font = moeda_font
+                    cell.fill = fill_total_coluna
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
+                elif cell.column == 2:
+                    cell.font = texto_destaque_font
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+                elif cell.column == 3:
+                    cell.font = linklike_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                elif cell.column in (1, 5):
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left", vertical="center")
+    else:
+        ws_dados.merge_cells("A5:J5")
+        ws_dados["A5"] = "Nenhum participante encontrado para os filtros selecionados."
+        ws_dados["A5"].font = texto_destaque_font
+        ws_dados["A5"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_dados["A5"].border = border
+        ws_dados["A5"].fill = fill_info
+        last_data_row = 5
+
+    ws_dados.freeze_panes = "A5"
+
+    tabela_ref = f"A4:J{last_data_row}"
+    if possui_dados:
+        tabela = Table(displayName="TabelaParticipantes", ref=tabela_ref)
+        tabela.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium9",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False,
+        )
+        ws_dados.add_table(tabela)
+    else:
+        ws_dados.auto_filter.ref = "A4:J4"
+
+    larguras = {
+        "A": 8,
+        "B": 36,
+        "C": 14,
+        "D": 26,
+        "E": 16,
+        "F": 18,
+        "G": 32,
+        "H": 16,
+        "I": 30,
+        "J": 18,
+    }
+    for col, largura in larguras.items():
+        ws_dados.column_dimensions[col].width = largura
+
+    xlsx_output = BytesIO()
+    workbook.save(xlsx_output)
+    xlsx_output.seek(0)
+
+    response = make_response(xlsx_output.getvalue())
+    response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    response.headers["Content-Disposition"] = "attachment; filename=relatorio_participantes.xlsx"
+    return response
 
 @app.route("/relatorios/pdf")
 def relatorios_pdf():
@@ -972,6 +1276,14 @@ def relatorios_pdf():
     response.headers["Content-Type"] = "application/pdf"
     response.headers["Content-Disposition"] = "attachment; filename=relatorio_arrecadacao.pdf"
     return response
+
+@app.route("/demo", methods=["GET", "POST"])
+def demo():
+    session["user_id"] = 999
+    session["nome"] = "Modo Demonstração"
+    session["cargo"] = "demo"
+    session["modo_demo"] = True
+    return redirect("/dashboard")
 
 
 # =========================

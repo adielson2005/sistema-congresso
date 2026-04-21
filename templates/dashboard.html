@@ -4,9 +4,9 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block page_content %}
-<div class="mb-4">
-    <h3 class="mb-1 fw-bold">Painel Administrativo</h3>
-    <p class="text-muted mb-0">Acompanhe os principais dados do sistema de arrecadação.</p>
+<div class="page-header">
+    <h3>Painel Administrativo</h3>
+    <p>Acompanhe os principais dados do sistema de arrecadação.</p>
 </div>
 
 <div class="row g-3 mb-4">
@@ -104,10 +104,19 @@
     </div>
 </div>
 
+<div
+    id="dadosGraficoDashboard"
+    data-congregacao-labels='{{ arrecadacao_por_congregacao | map(attribute="congregacao") | list | tojson }}'
+    data-congregacao-valores='{{ arrecadacao_por_congregacao | map(attribute="total") | list | tojson }}'
+    data-macro-labels='{{ arrecadacao_por_macro | map(attribute="macro") | list | tojson }}'
+    data-macro-valores='{{ arrecadacao_por_macro | map(attribute="total") | list | tojson }}'
+></div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
 let grafico;
+const dadosGraficoDashboard = document.getElementById("dadosGraficoDashboard");
 
 // gráfico de evolução
 async function carregar() {
@@ -153,17 +162,8 @@ carregar();
 setInterval(carregar, 5000);
 
 // gráfico por congregação
-const labelsCongregacao = [
-    {% for item in arrecadacao_por_congregacao %}
-        "{{ item.congregacao }}",
-    {% endfor %}
-];
-
-const valoresCongregacao = [
-    {% for item in arrecadacao_por_congregacao %}
-        {{ item.total }},
-    {% endfor %}
-];
+const labelsCongregacao = JSON.parse(dadosGraficoDashboard.dataset.congregacaoLabels || "[]");
+const valoresCongregacao = JSON.parse(dadosGraficoDashboard.dataset.congregacaoValores || "[]");
 
 const ctxCongregacao = document.getElementById("graficoCongregacao");
 
@@ -187,17 +187,8 @@ new Chart(ctxCongregacao, {
 });
 
 // gráfico por macro
-const labelsMacro = [
-    {% for item in arrecadacao_por_macro %}
-        "{{ item.macro }}",
-    {% endfor %}
-];
-
-const valoresMacro = [
-    {% for item in arrecadacao_por_macro %}
-        {{ item.total }},
-    {% endfor %}
-];
+const labelsMacro = JSON.parse(dadosGraficoDashboard.dataset.macroLabels || "[]");
+const valoresMacro = JSON.parse(dadosGraficoDashboard.dataset.macroValores || "[]");
 
 const ctxMacro = document.getElementById("graficoMacro");
 
