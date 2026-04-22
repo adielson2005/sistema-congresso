@@ -1,0 +1,15 @@
+.git
+.gitignore
+.vscode
+.idea
+.qodo
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.env
+.env.*
+database/*.db

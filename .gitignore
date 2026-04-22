@@ -13,6 +13,7 @@ env/
 # Local environment files
 .env
 .env.*
+!.env.example
 
 # Local database and generated files
 database/banco.db

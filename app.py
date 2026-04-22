@@ -2,14 +2,18 @@ import os
 import re
 import sqlite3
 import bcrypt
-from datetime import datetime
+from datetime import datetime, timedelta
+from time import time
 from secrets import compare_digest, token_hex, token_urlsafe
 from io import BytesIO
+from urllib.parse import urlparse
 from flask import Flask, render_template, request, redirect, session, flash, jsonify, make_response
+from openpyxl.chart import BarChart, Reference
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from xhtml2pdf import pisa
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # =========================
 # CONFIG
@@ -20,19 +24,42 @@ if db_dir:
     os.makedirs(db_dir, exist_ok=True)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY") or token_hex(32)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()
+IS_PRODUCTION = APP_ENV == "production"
+
+secret_key = os.environ.get("SECRET_KEY")
+if IS_PRODUCTION and not secret_key:
+    raise RuntimeError("SECRET_KEY é obrigatório com APP_ENV=production")
+app.secret_key = secret_key or token_hex(32)
+
+session_cookie_secure_env = os.environ.get("SESSION_COOKIE_SECURE", "")
+session_cookie_secure = (
+    session_cookie_secure_env.lower() in {"1", "true", "yes"}
+    if session_cookie_secure_env
+    else IS_PRODUCTION
+)
+
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "").lower() in {"1", "true", "yes"}
+app.config["SESSION_COOKIE_SECURE"] = session_cookie_secure
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=int(os.environ.get("SESSION_LIFETIME_HOURS", "12")))
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", str(2 * 1024 * 1024)))
+app.config["PREFERRED_URL_SCHEME"] = "https" if IS_PRODUCTION else "http"
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 DEMO_ALLOWED_ENDPOINTS = {"login", "demo", "logout"}
 PARTICIPANTES_POR_PAGINA = 10
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "cadepa@2026A")
-SINGLE_LOGIN_USER = os.environ.get("SINGLE_LOGIN_USER", "Ujadepa26")
-SINGLE_LOGIN_PASSWORD = os.environ.get("SINGLE_LOGIN_PASSWORD", "cadepa2026@")
-SINGLE_LOGIN_NAME = os.environ.get("SINGLE_LOGIN_NAME", "Ujadepa26")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
+SINGLE_LOGIN_USER = os.environ.get("SINGLE_LOGIN_USER")
+SINGLE_LOGIN_PASSWORD = os.environ.get("SINGLE_LOGIN_PASSWORD")
+SINGLE_LOGIN_NAME = os.environ.get("SINGLE_LOGIN_NAME", "Login compartilhado")
 SINGLE_LOGIN_ROLE = os.environ.get("SINGLE_LOGIN_ROLE", "admin")
+LOGIN_MAX_ATTEMPTS = int(os.environ.get("LOGIN_MAX_ATTEMPTS", "10"))
+LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.environ.get("LOGIN_ATTEMPT_WINDOW_SECONDS", "900"))
+LOGIN_LOCKOUT_SECONDS = int(os.environ.get("LOGIN_LOCKOUT_SECONDS", "900"))
+FAILED_LOGIN_ATTEMPTS = {}
 
 
 # =========================
@@ -41,7 +68,69 @@ SINGLE_LOGIN_ROLE = os.environ.get("SINGLE_LOGIN_ROLE", "admin")
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def get_client_ip():
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def is_safe_target(target):
+    if not target:
+        return False
+
+    host_url = urlparse(request.host_url)
+    redirect_url = urlparse(target)
+    if redirect_url.scheme and redirect_url.scheme not in {"http", "https"}:
+        return False
+    return (not redirect_url.netloc) or (redirect_url.netloc == host_url.netloc)
+
+
+def safe_redirect_back(default_path):
+    target = request.referrer
+    if target and is_safe_target(target):
+        return redirect(target)
+    return redirect(default_path)
+
+
+def prune_failed_attempts(now_ts):
+    keys_to_delete = []
+    for ip_address, info in FAILED_LOGIN_ATTEMPTS.items():
+        attempts = [ts for ts in info.get("attempts", []) if now_ts - ts <= LOGIN_ATTEMPT_WINDOW_SECONDS]
+        info["attempts"] = attempts
+        if info.get("locked_until", 0) < now_ts and not attempts:
+            keys_to_delete.append(ip_address)
+
+    for key in keys_to_delete:
+        FAILED_LOGIN_ATTEMPTS.pop(key, None)
+
+
+def is_ip_locked(ip_address, now_ts):
+    info = FAILED_LOGIN_ATTEMPTS.get(ip_address)
+    if not info:
+        return False
+
+    locked_until = info.get("locked_until", 0)
+    return locked_until > now_ts
+
+
+def register_failed_login(ip_address, now_ts):
+    info = FAILED_LOGIN_ATTEMPTS.setdefault(ip_address, {"attempts": [], "locked_until": 0})
+    attempts = [ts for ts in info["attempts"] if now_ts - ts <= LOGIN_ATTEMPT_WINDOW_SECONDS]
+    attempts.append(now_ts)
+    info["attempts"] = attempts
+
+    if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+        info["locked_until"] = now_ts + LOGIN_LOCKOUT_SECONDS
+        info["attempts"] = []
+
+
+def clear_failed_login(ip_address):
+    FAILED_LOGIN_ATTEMPTS.pop(ip_address, None)
 
 
 def get_csrf_token():
@@ -211,13 +300,24 @@ def protect_unsafe_requests():
 
     if not is_valid_csrf_request():
         flash("Sessão inválida ou expirada. Atualize a página e tente novamente.", "danger")
-        return redirect(request.referrer or "/login")
+        return safe_redirect_back("/login")
 
     if session.get("modo_demo") and request.endpoint not in DEMO_ALLOWED_ENDPOINTS:
         flash("Modo demonstração: alterações estão bloqueadas.", "warning")
-        return redirect(request.referrer or "/dashboard")
+        return safe_redirect_back("/dashboard")
 
     return None
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if IS_PRODUCTION and request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 def authenticate_single_login(usuario, senha):
@@ -292,9 +392,9 @@ def init_db():
         )
     """)
 
-    default_admin_user = os.environ.get("DEFAULT_ADMIN_USER", "Ujadepa26")
-    default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "cadepa2026@")
-    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Ujadepa26")
+    default_admin_user = os.environ.get("DEFAULT_ADMIN_USER")
+    default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD")
+    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Administrador")
     default_admin_role = os.environ.get("DEFAULT_ADMIN_ROLE", "admin")
 
     if default_admin_user and default_admin_password:
@@ -389,17 +489,28 @@ def home():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        now_ts = int(time())
+        prune_failed_attempts(now_ts)
+        client_ip = get_client_ip()
+
+        if is_ip_locked(client_ip, now_ts):
+            flash("Muitas tentativas. Aguarde alguns minutos e tente novamente.", "danger")
+            return redirect("/login")
+
         usuario = request.form["usuario"]
         senha = request.form["senha"]
 
         single_login_user = authenticate_single_login(usuario, senha)
         if single_login_user:
+            clear_failed_login(client_ip)
             session.pop("modo_demo", None)
             session["user_id"] = single_login_user["id"]
             session["nome"] = single_login_user["nome"]
             session["cargo"] = single_login_user["cargo"]
+            session.permanent = True
             return redirect("/dashboard")
         if single_login_user is False:
+            register_failed_login(client_ip, now_ts)
             flash("Usuário ou senha inválidos.", "danger")
             return redirect("/login")
 
@@ -413,14 +524,18 @@ def login():
         if user:
             senha_hash = user["senha_hash"]
             if bcrypt.checkpw(senha.encode("utf-8"), senha_hash):
+                clear_failed_login(client_ip)
                 session.pop("modo_demo", None)
                 session["user_id"] = user["id"]
                 session["nome"] = user["nome"]
                 session["cargo"] = user["cargo"]
+                session.permanent = True
                 return redirect("/dashboard")
+            register_failed_login(client_ip, now_ts)
             flash("Usuário ou senha inválidos.", "danger")
             return redirect("/login")
 
+        register_failed_login(client_ip, now_ts)
         flash("Usuário ou senha inválidos.", "danger")
         return redirect("/login")
 
@@ -1244,14 +1359,24 @@ def relatorios_planilha():
     ws_dados.sheet_view.showGridLines = False
     ws_resumo.sheet_view.zoomScale = 115
     ws_dados.sheet_view.zoomScale = 90
+    ws_resumo.sheet_properties.tabColor = "1D4ED8"
+    ws_dados.sheet_properties.tabColor = "0F172A"
+    ws_resumo.freeze_panes = "A9"
 
-    # Estilos reutilizáveis para manter o arquivo organizado e legível no Excel.
-    titulo_font = Font(name="Calibri", size=16, bold=True, color="FFFFFF")
-    subtitulo_font = Font(name="Calibri", size=10, italic=True, color="DCEAFE")
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    total_participantes = len(participantes_relatorio)
+    total_macros = len([item for item in por_macro if float(item["total"] or 0) > 0])
+    media_arrecadacao = float(total_geral or 0) / total_participantes if total_participantes else 0
+
+    titulo_font = Font(name="Calibri", size=17, bold=True, color="FFFFFF")
+    subtitulo_font = Font(name="Calibri", size=10, italic=True, color="DBEAFE")
     cabecalho_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     texto_font = Font(name="Calibri", size=11, color="1E293B")
     texto_destaque_font = Font(name="Calibri", size=11, bold=True, color="0F172A")
+    card_label_font = Font(name="Calibri", size=10, bold=True, color="475569")
+    card_value_font = Font(name="Calibri", size=15, bold=True, color="0F172A")
     moeda_font = Font(name="Calibri", size=11, bold=True, color="166534")
+    moeda_card_font = Font(name="Calibri", size=16, bold=True, color="166534")
     linklike_font = Font(name="Calibri", size=11, bold=True, color="1D4ED8")
     fill_titulo = PatternFill(fill_type="solid", start_color="1D4ED8", end_color="1D4ED8")
     fill_cabecalho = PatternFill(fill_type="solid", start_color="0F172A", end_color="0F172A")
@@ -1261,78 +1386,138 @@ def relatorios_planilha():
     fill_linha_clara = PatternFill(fill_type="solid", start_color="F8FAFC", end_color="F8FAFC")
     fill_linha_branca = PatternFill(fill_type="solid", start_color="FFFFFF", end_color="FFFFFF")
     fill_total_coluna = PatternFill(fill_type="solid", start_color="F0FDF4", end_color="F0FDF4")
+    fill_card = PatternFill(fill_type="solid", start_color="F8FAFC", end_color="F8FAFC")
+    fill_card_value = PatternFill(fill_type="solid", start_color="FFFFFF", end_color="FFFFFF")
     border = Border(
         left=Side(style="thin", color="D1D5DB"),
         right=Side(style="thin", color="D1D5DB"),
         top=Side(style="thin", color="D1D5DB"),
         bottom=Side(style="thin", color="D1D5DB"),
     )
+    border_destaque = Border(
+        left=Side(style="medium", color="93C5FD"),
+        right=Side(style="medium", color="93C5FD"),
+        top=Side(style="medium", color="93C5FD"),
+        bottom=Side(style="medium", color="93C5FD"),
+    )
+
+    def estilizar_intervalo(worksheet, start_row, end_row, start_col, end_col, fill=None, font=None, alignment=None, cell_border=None):
+        for row in worksheet.iter_rows(min_row=start_row, max_row=end_row, min_col=start_col, max_col=end_col):
+            for cell in row:
+                if fill is not None:
+                    cell.fill = fill
+                if font is not None:
+                    cell.font = font
+                if alignment is not None:
+                    cell.alignment = alignment
+                if cell_border is not None:
+                    cell.border = cell_border
 
     # ABA RESUMO
-    ws_resumo.merge_cells("A1:D1")
+    ws_resumo.merge_cells("A1:H1")
     ws_resumo["A1"] = "Relatorio de Arrecadacao"
     ws_resumo["A1"].font = titulo_font
     ws_resumo["A1"].fill = fill_titulo
     ws_resumo["A1"].alignment = Alignment(horizontal="center", vertical="center")
-    ws_resumo.merge_cells("A2:D2")
-    ws_resumo["A2"] = "Visao executiva para secretaria e tesouraria"
+
+    ws_resumo.merge_cells("A2:H2")
+    ws_resumo["A2"] = "Visao executiva com indicadores e consolidado por macro"
     ws_resumo["A2"].font = subtitulo_font
     ws_resumo["A2"].fill = fill_titulo
     ws_resumo["A2"].alignment = Alignment(horizontal="center", vertical="center")
 
-    ws_resumo["A3"] = "Gerado em"
-    ws_resumo["B3"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-    ws_resumo["A4"] = "Filtro Macro"
-    ws_resumo["B4"] = macro or "Todas"
-    ws_resumo["A5"] = "Filtro Congregacao"
-    ws_resumo["B5"] = congregacao or "Todas"
-    ws_resumo["A6"] = "Participantes listados"
-    ws_resumo["B6"] = len(participantes_relatorio)
-    ws_resumo["A7"] = "Total arrecadado"
-    ws_resumo["B7"] = float(total_geral or 0)
-    ws_resumo["B7"].number_format = "R$ #,##0.00"
+    cards = [
+        ("A4:B4", "A5:B6", "Total arrecadado", float(total_geral or 0), moeda_card_font, "R$ #,##0.00", fill_resumo_total),
+        ("C4:D4", "C5:D6", "Participantes", total_participantes, card_value_font, None, fill_card_value),
+        ("E4:F4", "E5:F6", "Macros com arrecadacao", total_macros, card_value_font, None, fill_card_value),
+        ("G4:H4", "G5:H6", "Media por participante", media_arrecadacao, moeda_card_font, "R$ #,##0.00", fill_card_value),
+    ]
 
-    ws_resumo["A9"] = "Macro"
-    ws_resumo["B9"] = "Total"
-    ws_resumo["A9"].font = cabecalho_font
-    ws_resumo["B9"].font = cabecalho_font
-    ws_resumo["A9"].fill = fill_cabecalho
-    ws_resumo["B9"].fill = fill_cabecalho
+    for label_range, value_range, label, value, value_font, number_format, value_fill in cards:
+        ws_resumo.merge_cells(label_range)
+        ws_resumo.merge_cells(value_range)
+        label_cell = ws_resumo[label_range.split(":")[0]]
+        value_cell = ws_resumo[value_range.split(":")[0]]
+        label_cell.value = label
+        value_cell.value = value
+        label_cell.font = card_label_font
+        value_cell.font = value_font
+        label_cell.fill = fill_card
+        value_cell.fill = value_fill
+        label_cell.alignment = Alignment(horizontal="center", vertical="center")
+        value_cell.alignment = Alignment(horizontal="center", vertical="center")
+        if number_format:
+            value_cell.number_format = number_format
+        estilizar_intervalo(ws_resumo, label_cell.row, value_cell.row + 1, label_cell.column, value_cell.column + 1, cell_border=border_destaque)
 
-    linha_resumo = 10
+    ws_resumo["A8"] = "Macro"
+    ws_resumo["B8"] = "Total"
+    ws_resumo["A8"].font = cabecalho_font
+    ws_resumo["B8"].font = cabecalho_font
+    ws_resumo["A8"].fill = fill_cabecalho
+    ws_resumo["B8"].fill = fill_cabecalho
+    ws_resumo["A8"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_resumo["B8"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_resumo["A8"].border = border
+    ws_resumo["B8"].border = border
+
+    linha_resumo = 9
     for item in por_macro:
         ws_resumo[f"A{linha_resumo}"] = item["macro"]
         ws_resumo[f"B{linha_resumo}"] = float(item["total"] or 0)
         ws_resumo[f"B{linha_resumo}"].number_format = "R$ #,##0.00"
         linha_resumo += 1
 
-    for row in ws_resumo.iter_rows(min_row=3, max_row=max(10, linha_resumo - 1), min_col=1, max_col=2):
+    ultima_linha_macro = max(9, linha_resumo - 1)
+    for row in ws_resumo.iter_rows(min_row=9, max_row=ultima_linha_macro, min_col=1, max_col=2):
         for cell in row:
-            if not (cell.font and cell.font.bold):
-                cell.font = texto_font
+            cell.font = moeda_font if cell.column == 2 else texto_font
             cell.border = border
-            cell.alignment = Alignment(vertical="center", horizontal="left")
+            cell.alignment = Alignment(horizontal="right" if cell.column == 2 else "left", vertical="center")
+            cell.fill = fill_linha_clara if cell.row % 2 == 0 else fill_linha_branca
 
-    for linha in range(3, 8):
-        ws_resumo[f"A{linha}"].font = texto_destaque_font
-        ws_resumo[f"A{linha}"].fill = fill_info_label
-        ws_resumo[f"B{linha}"].fill = fill_info
+    ws_resumo["E8"] = "Filtros aplicados"
+    ws_resumo["E8"].font = cabecalho_font
+    ws_resumo["E8"].fill = fill_cabecalho
+    ws_resumo["E8"].alignment = Alignment(horizontal="center", vertical="center")
+    ws_resumo.merge_cells("E9:H9")
+    ws_resumo["E9"] = f"Macro: {macro or 'Todas'} | Congregacao: {congregacao or 'Todas'} | Gerado em: {agora}"
+    ws_resumo["E9"].font = texto_font
+    ws_resumo["E9"].fill = fill_info
+    ws_resumo["E9"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    estilizar_intervalo(ws_resumo, 8, 9, 5, 8, cell_border=border)
 
-    ws_resumo["A7"].fill = fill_resumo_total
-    ws_resumo["B7"].fill = fill_resumo_total
-    ws_resumo["B7"].font = moeda_font
+    if por_macro:
+        grafico_macro = BarChart()
+        grafico_macro.type = "bar"
+        grafico_macro.style = 10
+        grafico_macro.title = "Arrecadacao por Macro"
+        grafico_macro.y_axis.title = "Valor"
+        grafico_macro.x_axis.title = "Macro"
+        grafico_macro.height = 8
+        grafico_macro.width = 14
+        dados_grafico = Reference(ws_resumo, min_col=2, min_row=8, max_row=ultima_linha_macro)
+        categorias_grafico = Reference(ws_resumo, min_col=1, min_row=9, max_row=ultima_linha_macro)
+        grafico_macro.add_data(dados_grafico, titles_from_data=True)
+        grafico_macro.set_categories(categorias_grafico)
+        grafico_macro.legend = None
+        ws_resumo.add_chart(grafico_macro, "D11")
 
-    for linha in range(10, linha_resumo):
-        ws_resumo[f"A{linha}"].fill = fill_linha_clara if linha % 2 == 0 else fill_linha_branca
-        ws_resumo[f"B{linha}"].fill = fill_linha_clara if linha % 2 == 0 else fill_linha_branca
-        ws_resumo[f"B{linha}"].font = moeda_font
-
-    ws_resumo.column_dimensions["A"].width = 28
-    ws_resumo.column_dimensions["B"].width = 22
-    ws_resumo.column_dimensions["C"].width = 6
-    ws_resumo.column_dimensions["D"].width = 6
-    ws_resumo.row_dimensions[1].height = 28
-    ws_resumo.row_dimensions[2].height = 20
+    for coluna, largura in {
+        "A": 20,
+        "B": 18,
+        "C": 16,
+        "D": 16,
+        "E": 18,
+        "F": 18,
+        "G": 18,
+        "H": 18,
+    }.items():
+        ws_resumo.column_dimensions[coluna].width = largura
+    ws_resumo.row_dimensions[1].height = 30
+    ws_resumo.row_dimensions[2].height = 22
+    for linha in range(4, 7):
+        ws_resumo.row_dimensions[linha].height = 24
 
     # ABA DE DADOS (PLANILHA PRINCIPAL)
     ws_dados.merge_cells("A1:J1")
@@ -1340,14 +1525,23 @@ def relatorios_planilha():
     ws_dados["A1"].font = titulo_font
     ws_dados["A1"].fill = fill_titulo
     ws_dados["A1"].alignment = Alignment(horizontal="center", vertical="center")
+
     ws_dados.merge_cells("A2:J2")
-    ws_dados["A2"] = f"Macro: {macro or 'Todas'}  |  Congregacao: {congregacao or 'Todas'}  |  Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    ws_dados["A2"] = f"Macro: {macro or 'Todas'}  |  Congregacao: {congregacao or 'Todas'}  |  Gerado em: {agora}"
     ws_dados["A2"].font = subtitulo_font
     ws_dados["A2"].fill = fill_titulo
     ws_dados["A2"].alignment = Alignment(horizontal="center", vertical="center")
 
-    ws_dados.row_dimensions[1].height = 28
-    ws_dados.row_dimensions[2].height = 20
+    ws_dados.merge_cells("A3:J3")
+    ws_dados["A3"] = f"Resumo rapido: {total_participantes} participantes listados e total arrecadado de R$ {float(total_geral or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    ws_dados["A3"].font = texto_destaque_font
+    ws_dados["A3"].fill = fill_info
+    ws_dados["A3"].alignment = Alignment(horizontal="center", vertical="center")
+    estilizar_intervalo(ws_dados, 1, 3, 1, 10, cell_border=border)
+
+    ws_dados.row_dimensions[1].height = 30
+    ws_dados.row_dimensions[2].height = 22
+    ws_dados.row_dimensions[3].height = 24
 
     headers = [
         "ID",
@@ -1362,7 +1556,7 @@ def relatorios_planilha():
         "Total arrecadado",
     ]
 
-    header_row = 4
+    header_row = 5
     for col, header in enumerate(headers, start=1):
         cell = ws_dados.cell(row=header_row, column=col, value=header)
         cell.font = cabecalho_font
@@ -1407,22 +1601,35 @@ def relatorios_planilha():
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                 else:
                     cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        total_row = last_data_row + 2
+        ws_dados[f"I{total_row}"] = "Total geral"
+        ws_dados[f"I{total_row}"].font = texto_destaque_font
+        ws_dados[f"I{total_row}"].fill = fill_info_label
+        ws_dados[f"I{total_row}"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_dados[f"I{total_row}"].border = border_destaque
+        ws_dados[f"J{total_row}"] = f"=SUM(J{data_start}:J{last_data_row})"
+        ws_dados[f"J{total_row}"].font = moeda_card_font
+        ws_dados[f"J{total_row}"].fill = fill_resumo_total
+        ws_dados[f"J{total_row}"].alignment = Alignment(horizontal="right", vertical="center")
+        ws_dados[f"J{total_row}"].border = border_destaque
+        ws_dados[f"J{total_row}"].number_format = "R$ #,##0.00"
     else:
-        ws_dados.merge_cells("A5:J5")
-        ws_dados["A5"] = "Nenhum participante encontrado para os filtros selecionados."
-        ws_dados["A5"].font = texto_destaque_font
-        ws_dados["A5"].alignment = Alignment(horizontal="center", vertical="center")
-        ws_dados["A5"].border = border
-        ws_dados["A5"].fill = fill_info
-        last_data_row = 5
+        ws_dados.merge_cells("A6:J6")
+        ws_dados["A6"] = "Nenhum participante encontrado para os filtros selecionados."
+        ws_dados["A6"].font = texto_destaque_font
+        ws_dados["A6"].alignment = Alignment(horizontal="center", vertical="center")
+        ws_dados["A6"].border = border
+        ws_dados["A6"].fill = fill_info
+        last_data_row = 6
 
-    ws_dados.freeze_panes = "A5"
+    ws_dados.freeze_panes = "A6"
 
-    tabela_ref = f"A4:J{last_data_row}"
+    tabela_ref = f"A5:J{last_data_row}"
     if possui_dados:
         tabela = Table(displayName="TabelaParticipantes", ref=tabela_ref)
         tabela.tableStyleInfo = TableStyleInfo(
-            name="TableStyleMedium9",
+            name="TableStyleMedium2",
             showFirstColumn=False,
             showLastColumn=False,
             showRowStripes=True,
@@ -1430,7 +1637,7 @@ def relatorios_planilha():
         )
         ws_dados.add_table(tabela)
     else:
-        ws_dados.auto_filter.ref = "A4:J4"
+        ws_dados.auto_filter.ref = "A5:J5"
 
     larguras = {
         "A": 8,
@@ -1648,6 +1855,10 @@ def demo():
     if request.method != "POST":
         return redirect("/login")
 
+    if not DEMO_PASSWORD:
+        flash("Modo demonstração está desativado neste ambiente.", "warning")
+        return redirect("/login")
+
     senha_demo = request.form.get("senha_demo", "")
     if senha_demo != DEMO_PASSWORD:
         flash("Senha do modo demonstração inválida.", "danger")
@@ -1657,6 +1868,7 @@ def demo():
     session["nome"] = "Modo Demonstração"
     session["cargo"] = "demo"
     session["modo_demo"] = True
+    session.permanent = True
     return redirect("/dashboard")
 
 
@@ -1665,4 +1877,4 @@ def demo():
 # =========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=not IS_PRODUCTION)
