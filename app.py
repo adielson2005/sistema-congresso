@@ -1,27 +1,44 @@
 import os
 import re
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import bcrypt
+
 from datetime import datetime, timedelta
 from time import time
 from secrets import compare_digest, token_hex, token_urlsafe
 from io import BytesIO
 from urllib.parse import urlparse
-from flask import Flask, render_template, request, redirect, session, flash, jsonify, make_response
-from openpyxl.chart import BarChart, Reference
+
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    session,
+    flash,
+    jsonify,
+    make_response,
+    send_file,
+    url_for
+)
+
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.utils import secure_filename
+
 from openpyxl import Workbook
+from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.table import Table, TableStyleInfo
+
 from xhtml2pdf import pisa
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 # =========================
 # CONFIG
 # =========================
-DB_PATH = os.environ.get("DB_PATH", "database/banco.db")
-db_dir = os.path.dirname(DB_PATH)
-if db_dir:
-    os.makedirs(db_dir, exist_ok=True)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL não configurada. Configure essa variável no Render/PostgreSQL.")
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
@@ -49,13 +66,14 @@ app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", str(
 app.config["PREFERRED_URL_SCHEME"] = "https" if IS_PRODUCTION else "http"
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-DEMO_ALLOWED_ENDPOINTS = {"login", "demo", "logout"}
 PARTICIPANTES_POR_PAGINA = 10
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
 SINGLE_LOGIN_USER = os.environ.get("SINGLE_LOGIN_USER")
 SINGLE_LOGIN_PASSWORD = os.environ.get("SINGLE_LOGIN_PASSWORD")
 SINGLE_LOGIN_NAME = os.environ.get("SINGLE_LOGIN_NAME", "Login compartilhado")
 SINGLE_LOGIN_ROLE = os.environ.get("SINGLE_LOGIN_ROLE", "admin")
+CAIXA_LOGIN_USER = os.environ.get("CAIXA_LOGIN_USER")
+CAIXA_LOGIN_PASSWORD = os.environ.get("CAIXA_LOGIN_PASSWORD")
+CAIXA_LOGIN_NAME = os.environ.get("CAIXA_LOGIN_NAME", "Caixa Adolescentes")
 LOGIN_MAX_ATTEMPTS = int(os.environ.get("LOGIN_MAX_ATTEMPTS", "10"))
 LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.environ.get("LOGIN_ATTEMPT_WINDOW_SECONDS", "900"))
 LOGIN_LOCKOUT_SECONDS = int(os.environ.get("LOGIN_LOCKOUT_SECONDS", "900"))
@@ -65,11 +83,44 @@ FAILED_LOGIN_ATTEMPTS = {}
 # =========================
 # BANCO
 # =========================
+class DatabaseConnection:
+    """
+    Adaptador simples para manter o padrão conn.execute(...) que seu app já usa,
+    mas usando PostgreSQL/psycopg2 por baixo.
+    Ele converte os placeholders do SQLite (?) para PostgreSQL (%s).
+    """
+    def __init__(self):
+        self.conn = psycopg2.connect(
+            DATABASE_URL,
+            cursor_factory=psycopg2.extras.RealDictCursor
+        )
+
+    def execute(self, sql, params=None):
+        sql = sql.replace("?", "%s")
+        cur = self.conn.cursor()
+        cur.execute(sql, params or ())
+        return cur
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.conn.close()
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    return DatabaseConnection()
+
+
+def normalize_password_hash(senha_hash):
+    if isinstance(senha_hash, memoryview):
+        return senha_hash.tobytes()
+    if isinstance(senha_hash, bytearray):
+        return bytes(senha_hash)
+    return senha_hash
 
 
 def get_client_ip():
@@ -262,10 +313,11 @@ def normalize_participante_fields(cpf, numero, email, data_nascimento):
 
 
 def normalize_existing_participantes(cursor):
-    participantes = cursor.execute("""
+    cursor.execute("""
         SELECT id, cpf, numero
         FROM participantes
-    """).fetchall()
+    """)
+    participantes = cursor.fetchall()
 
     for participante_id, cpf, numero in participantes:
         cpf_digits = only_digits(cpf)
@@ -283,8 +335,8 @@ def normalize_existing_participantes(cursor):
         if cpf != cpf_formatado or (numero or "") != numero_formatado:
             cursor.execute("""
                 UPDATE participantes
-                SET cpf = ?, numero = ?
-                WHERE id = ?
+                SET cpf = %s, numero = %s
+                WHERE id = %s
             """, (cpf_formatado, numero_formatado, participante_id))
 
 
@@ -301,10 +353,6 @@ def protect_unsafe_requests():
     if not is_valid_csrf_request():
         flash("Sessão inválida ou expirada. Atualize a página e tente novamente.", "danger")
         return safe_redirect_back("/login")
-
-    if session.get("modo_demo") and request.endpoint not in DEMO_ALLOWED_ENDPOINTS:
-        flash("Modo demonstração: alterações estão bloqueadas.", "warning")
-        return safe_redirect_back("/dashboard")
 
     return None
 
@@ -337,41 +385,89 @@ def authenticate_single_login(usuario, senha):
     }
 
 
+def authenticate_caixa_login(usuario, senha):
+    if not CAIXA_LOGIN_USER or not CAIXA_LOGIN_PASSWORD:
+        return None
+
+    if not compare_digest(usuario, CAIXA_LOGIN_USER):
+        return False
+
+    if not compare_digest(senha, CAIXA_LOGIN_PASSWORD):
+        return False
+
+    return {
+        "id": 1,
+        "nome": CAIXA_LOGIN_NAME,
+    }
+
+
+def authenticate_system_user(usuario, senha):
+    single_login_user = authenticate_single_login(usuario, senha)
+    if single_login_user:
+        return {
+            "id": single_login_user["id"],
+            "nome": single_login_user["nome"],
+        }
+    if single_login_user is False:
+        return False
+
+    conn = get_db()
+    user = conn.execute(
+        """
+        SELECT * FROM usuarios
+        WHERE usuario = ?
+        """,
+        (usuario,),
+    ).fetchone()
+    conn.close()
+
+    if not user:
+        return False
+
+    senha_hash = user["senha_hash"]
+    if not bcrypt.checkpw(senha.encode("utf-8"), normalize_password_hash(senha_hash)):
+        return False
+
+    return {
+        "id": user["id"],
+        "nome": user["nome"],
+    }
+
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             nome TEXT,
             usuario TEXT UNIQUE,
-            senha_hash BLOB,
+            senha_hash BYTEA,
             cargo TEXT
         )
     """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS macros (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT UNIQUE
+            id SERIAL PRIMARY KEY,
+            nome TEXT UNIQUE NOT NULL
         )
     """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS congregacoes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT,
-            macro_id INTEGER,
-            UNIQUE(nome, macro_id),
-            FOREIGN KEY (macro_id) REFERENCES macros(id)
+            id SERIAL PRIMARY KEY,
+            nome TEXT NOT NULL,
+            macro_id INTEGER REFERENCES macros(id) ON DELETE CASCADE,
+            UNIQUE(nome, macro_id)
         )
     """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS participantes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome_completo TEXT,
+            id SERIAL PRIMARY KEY,
+            nome_completo TEXT NOT NULL,
             data_nascimento TEXT,
             cpf TEXT UNIQUE,
             email TEXT,
@@ -383,12 +479,26 @@ def init_db():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS arrecadacoes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            participante_id INTEGER,
-            valor REAL,
+            id SERIAL PRIMARY KEY,
+            participante_id INTEGER REFERENCES participantes(id) ON DELETE CASCADE,
+            valor NUMERIC(12,2),
             data_lancamento TEXT,
             observacao TEXT,
-            FOREIGN KEY (participante_id) REFERENCES participantes(id)
+            comprovante TEXT
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS caixa_movimentacoes (
+            id SERIAL PRIMARY KEY,
+            tipo TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            descricao TEXT NOT NULL,
+            valor NUMERIC(12,2) NOT NULL,
+            data_movimento TEXT NOT NULL,
+            observacao TEXT,
+            criado_por TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -398,18 +508,18 @@ def init_db():
     default_admin_role = os.environ.get("DEFAULT_ADMIN_ROLE", "admin")
 
     if default_admin_user and default_admin_password:
-        user = cursor.execute("""
-            SELECT * FROM usuarios WHERE usuario = ?
-        """, (default_admin_user,)).fetchone()
+        cursor.execute("""
+            SELECT * FROM usuarios WHERE usuario = %s
+        """, (default_admin_user,))
+        user = cursor.fetchone()
 
         if not user:
             senha_hash = bcrypt.hashpw(default_admin_password.encode("utf-8"), bcrypt.gensalt())
             cursor.execute("""
                 INSERT INTO usuarios (nome, usuario, senha_hash, cargo)
-                VALUES (?, ?, ?, ?)
-            """, (default_admin_name, default_admin_user, senha_hash, default_admin_role))
+                VALUES (%s, %s, %s, %s)
+            """, (default_admin_name, default_admin_user, psycopg2.Binary(senha_hash), default_admin_role))
 
-    # macros padrão
     macros = [
         "MACRO 1",
         "MACRO 2",
@@ -421,7 +531,11 @@ def init_db():
     ]
 
     for macro in macros:
-        cursor.execute("INSERT OR IGNORE INTO macros (nome) VALUES (?)", (macro,))
+        cursor.execute("""
+            INSERT INTO macros (nome)
+            VALUES (%s)
+            ON CONFLICT (nome) DO NOTHING
+        """, (macro,))
 
     cursor.execute("SELECT id, nome FROM macros")
     macro_map = {row[1]: row[0] for row in cursor.fetchall()}
@@ -465,13 +579,15 @@ def init_db():
         if macro_id:
             for nome in congregacoes:
                 cursor.execute("""
-                    INSERT OR IGNORE INTO congregacoes (nome, macro_id)
-                    VALUES (?, ?)
+                    INSERT INTO congregacoes (nome, macro_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (nome, macro_id) DO NOTHING
                 """, (nome, macro_id))
 
     normalize_existing_participantes(cursor)
 
     conn.commit()
+    cursor.close()
     conn.close()
 
 
@@ -503,7 +619,8 @@ def login():
         single_login_user = authenticate_single_login(usuario, senha)
         if single_login_user:
             clear_failed_login(client_ip)
-            session.pop("modo_demo", None)
+            session.pop("caixa_user_id", None)
+            session.pop("caixa_nome", None)
             session["user_id"] = single_login_user["id"]
             session["nome"] = single_login_user["nome"]
             session["cargo"] = single_login_user["cargo"]
@@ -523,9 +640,10 @@ def login():
 
         if user:
             senha_hash = user["senha_hash"]
-            if bcrypt.checkpw(senha.encode("utf-8"), senha_hash):
+            if bcrypt.checkpw(senha.encode("utf-8"), normalize_password_hash(senha_hash)):
                 clear_failed_login(client_ip)
-                session.pop("modo_demo", None)
+                session.pop("caixa_user_id", None)
+                session.pop("caixa_nome", None)
                 session["user_id"] = user["id"]
                 session["nome"] = user["nome"]
                 session["cargo"] = user["cargo"]
@@ -546,6 +664,345 @@ def login():
 def logout():
     session.clear()
     return redirect("/login")
+
+
+@app.route("/caixa/login", methods=["GET", "POST"])
+def login_caixa():
+    if request.method == "POST":
+        now_ts = int(time())
+        prune_failed_attempts(now_ts)
+        client_ip = get_client_ip()
+
+        if is_ip_locked(client_ip, now_ts):
+            flash("Muitas tentativas. Aguarde alguns minutos e tente novamente.", "danger")
+            return redirect("/caixa/login")
+
+        usuario = request.form.get("usuario", "")
+        senha = request.form.get("senha", "")
+
+        caixa_user = authenticate_caixa_login(usuario, senha)
+        system_user = None
+        if caixa_user in (None, False):
+            system_user = authenticate_system_user(usuario, senha)
+
+        if caixa_user is False and system_user is False:
+            register_failed_login(client_ip, now_ts)
+            flash("Usuário ou senha do caixa inválidos.", "danger")
+            return redirect("/caixa/login")
+
+        if caixa_user is None and system_user is False:
+            register_failed_login(client_ip, now_ts)
+            flash("Usuário ou senha inválidos.", "danger")
+            return redirect("/caixa/login")
+
+        if caixa_user in (None, False):
+            caixa_user = {
+                "id": system_user["id"],
+                "nome": system_user["nome"] or CAIXA_LOGIN_NAME,
+            }
+
+        clear_failed_login(client_ip)
+        session.pop("user_id", None)
+        session.pop("nome", None)
+        session.pop("cargo", None)
+        session["caixa_user_id"] = caixa_user["id"]
+        session["caixa_nome"] = caixa_user["nome"]
+        session.permanent = True
+        return redirect("/caixa")
+
+    return render_template("login_caixa.html")
+
+
+@app.route("/caixa/logout")
+def logout_caixa():
+    session.clear()
+    return redirect("/caixa/login")
+
+
+# =========================
+# CAIXA ADOLESCENTES
+# =========================
+def obter_mes_caixa_selecionado(default_mes_atual=True):
+    mes_selecionado = request.args.get("mes", "").strip()
+    if mes_selecionado and not re.fullmatch(r"\d{4}-\d{2}", mes_selecionado):
+        return None
+
+    if not mes_selecionado and default_mes_atual:
+        mes_selecionado = datetime.now().strftime("%Y-%m")
+
+    return mes_selecionado
+
+
+def registrar_movimentacao_caixa(mes_selecionado, tipo_forcado=None):
+    categorias_permitidas = {
+        "venda_lanche",
+        "doacao",
+        "oferta",
+        "compra_material",
+        "despesa_outros",
+    }
+
+    tipo = (tipo_forcado or request.form.get("tipo") or "").strip().lower()
+    categoria = (request.form.get("categoria") or "").strip().lower()
+    descricao = (request.form.get("descricao") or "").strip()
+    data_movimento = (request.form.get("data_movimento") or "").strip()
+    observacao = (request.form.get("observacao") or "").strip()
+
+    if tipo not in {"entrada", "saida"}:
+        flash("Tipo de movimentação inválido.", "danger")
+        return redirect(f"/caixa?mes={mes_selecionado}")
+
+    if categoria not in categorias_permitidas:
+        flash("Categoria inválida.", "danger")
+        return redirect(f"/caixa?mes={mes_selecionado}")
+
+    if not descricao:
+        flash("Informe a descrição da movimentação.", "danger")
+        return redirect(f"/caixa?mes={mes_selecionado}")
+
+    try:
+        validate_iso_date(data_movimento, "Data da movimentação")
+    except ValueError as error:
+        flash(str(error), "danger")
+        return redirect(f"/caixa?mes={mes_selecionado}")
+
+    try:
+        valor = parse_currency_input(request.form.get("valor"))
+    except ValueError:
+        flash("Informe um valor válido.", "danger")
+        return redirect(f"/caixa?mes={mes_selecionado}")
+
+    if valor <= 0:
+        flash("O valor deve ser maior que zero.", "danger")
+        return redirect(f"/caixa?mes={mes_selecionado}")
+
+    conn = get_db()
+    conn.execute(
+        """
+        INSERT INTO caixa_movimentacoes (
+            tipo,
+            categoria,
+            descricao,
+            valor,
+            data_movimento,
+            observacao,
+            criado_por
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            tipo,
+            categoria,
+            descricao,
+            valor,
+            data_movimento,
+            observacao,
+            session.get("caixa_nome", "Caixa"),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    if tipo_forcado == "entrada":
+        flash("Entrada registrada no caixa com sucesso.", "success")
+    else:
+        flash("Movimentação registrada no caixa com sucesso.", "success")
+    return redirect(f"/caixa?mes={mes_selecionado}")
+
+
+@app.route("/caixa", methods=["GET", "POST"])
+def caixa_adolescentes():
+    if "caixa_user_id" not in session:
+        return redirect("/caixa/login")
+
+    mes_selecionado = obter_mes_caixa_selecionado(default_mes_atual=True)
+    if mes_selecionado is None:
+        flash("Filtro de mês inválido.", "danger")
+        return redirect("/caixa")
+
+    where_clause = "WHERE TO_CHAR(data_movimento::date, 'YYYY-MM') = ?"
+    where_params = [mes_selecionado]
+
+    if request.method == "POST":
+        return registrar_movimentacao_caixa(mes_selecionado)
+
+    conn = get_db()
+    total_entradas = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(valor), 0) AS total
+        FROM caixa_movimentacoes
+        {where_clause}
+          AND tipo = 'entrada'
+        """,
+        where_params,
+    ).fetchone()["total"]
+
+    total_saidas = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(valor), 0) AS total
+        FROM caixa_movimentacoes
+        {where_clause}
+          AND tipo = 'saida'
+        """,
+        where_params,
+    ).fetchone()["total"]
+
+    movimentacoes = conn.execute(
+        f"""
+        SELECT *
+        FROM caixa_movimentacoes
+        {where_clause}
+        ORDER BY data_movimento DESC, id DESC
+        LIMIT 300
+        """,
+        where_params,
+    ).fetchall()
+
+    resumo_categorias = conn.execute(
+        f"""
+        SELECT categoria, tipo, COALESCE(SUM(valor), 0) AS total
+        FROM caixa_movimentacoes
+        {where_clause}
+        GROUP BY categoria, tipo
+        ORDER BY tipo, categoria
+        """,
+        where_params,
+    ).fetchall()
+    conn.close()
+
+    saldo_atual = float(total_entradas or 0) - float(total_saidas or 0)
+
+    return render_template(
+        "caixa.html",
+        caixa_nome=session.get("caixa_nome", "Caixa"),
+        mes_selecionado=mes_selecionado,
+        total_entradas=float(total_entradas or 0),
+        total_saidas=float(total_saidas or 0),
+        saldo_atual=saldo_atual,
+        movimentacoes=movimentacoes,
+        resumo_categorias=resumo_categorias,
+    )
+
+
+@app.route("/caixa/entrada", methods=["POST"])
+def caixa_entrada():
+    if "caixa_user_id" not in session:
+        return redirect("/caixa/login")
+
+    mes_selecionado = obter_mes_caixa_selecionado(default_mes_atual=True)
+    if mes_selecionado is None:
+        flash("Filtro de mês inválido.", "danger")
+        return redirect("/caixa")
+
+    return registrar_movimentacao_caixa(mes_selecionado, tipo_forcado="entrada")
+
+
+@app.route("/caixa/relatorios")
+def caixa_relatorios():
+    if "caixa_user_id" not in session:
+        return redirect("/caixa/login")
+
+    mes_selecionado = obter_mes_caixa_selecionado(default_mes_atual=True)
+    if mes_selecionado is None:
+        flash("Filtro de mês inválido.", "danger")
+        return redirect("/caixa/relatorios")
+
+    where_clause = "WHERE TO_CHAR(data_movimento::date, 'YYYY-MM') = ?"
+    where_params = [mes_selecionado]
+
+    conn = get_db()
+    total_entradas = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(valor), 0) AS total
+        FROM caixa_movimentacoes
+        {where_clause}
+          AND tipo = 'entrada'
+        """,
+        where_params,
+    ).fetchone()["total"]
+
+    total_saidas = conn.execute(
+        f"""
+        SELECT COALESCE(SUM(valor), 0) AS total
+        FROM caixa_movimentacoes
+        {where_clause}
+          AND tipo = 'saida'
+        """,
+        where_params,
+    ).fetchone()["total"]
+
+    resumo_por_categoria = conn.execute(
+        f"""
+        SELECT
+            categoria,
+            COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE 0 END), 0) AS total_entradas,
+            COALESCE(SUM(CASE WHEN tipo = 'saida' THEN valor ELSE 0 END), 0) AS total_saidas
+        FROM caixa_movimentacoes
+        {where_clause}
+        GROUP BY categoria
+        ORDER BY categoria
+        """,
+        where_params,
+    ).fetchall()
+
+    movimentacoes_por_dia = conn.execute(
+        f"""
+        SELECT
+            data_movimento,
+            COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE 0 END), 0) AS total_entradas,
+            COALESCE(SUM(CASE WHEN tipo = 'saida' THEN valor ELSE 0 END), 0) AS total_saidas
+        FROM caixa_movimentacoes
+        {where_clause}
+        GROUP BY data_movimento
+        ORDER BY data_movimento ASC
+        """,
+        where_params,
+    ).fetchall()
+
+    ultimas_entradas = conn.execute(
+        f"""
+        SELECT *
+        FROM caixa_movimentacoes
+        {where_clause}
+          AND tipo = 'entrada'
+        ORDER BY data_movimento DESC, id DESC
+        LIMIT 20
+        """,
+        where_params,
+    ).fetchall()
+    conn.close()
+
+    saldo_atual = float(total_entradas or 0) - float(total_saidas or 0)
+
+    return render_template(
+        "caixa_relatorios.html",
+        caixa_nome=session.get("caixa_nome", "Caixa"),
+        mes_selecionado=mes_selecionado,
+        total_entradas=float(total_entradas or 0),
+        total_saidas=float(total_saidas or 0),
+        saldo_atual=saldo_atual,
+        resumo_por_categoria=resumo_por_categoria,
+        movimentacoes_por_dia=movimentacoes_por_dia,
+        ultimas_entradas=ultimas_entradas,
+    )
+
+
+@app.route("/caixa/lancamentos/<int:id>/excluir", methods=["POST"])
+def excluir_lancamento_caixa(id):
+    if "caixa_user_id" not in session:
+        return redirect("/caixa/login")
+
+    conn = get_db()
+    conn.execute("DELETE FROM caixa_movimentacoes WHERE id = ?", (id,))
+    conn.commit()
+    conn.close()
+
+    flash("Movimentação removida com sucesso.", "success")
+
+    mes_selecionado = request.args.get("mes", "").strip()
+    if mes_selecionado and re.fullmatch(r"\d{4}-\d{2}", mes_selecionado):
+        return redirect(f"/caixa?mes={mes_selecionado}")
+    return redirect("/caixa")
 
 
 # =========================
@@ -765,7 +1222,8 @@ def cadastrar_participante():
             ))
             conn.commit()
             flash("Participante cadastrado com sucesso!", "success")
-        except sqlite3.IntegrityError:
+        except psycopg2.IntegrityError:
+            conn.rollback()
             conn.close()
             flash("CPF já cadastrado. Verifique os dados.", "danger")
             return redirect("/participantes/cadastrar")
@@ -873,7 +1331,8 @@ def editar_participante(id):
             ))
             conn.commit()
             flash("Participante atualizado com sucesso!", "success")
-        except sqlite3.IntegrityError:
+        except psycopg2.IntegrityError:
+            conn.rollback()
             conn.close()
             flash("CPF já cadastrado em outro participante.", "danger")
             return redirect(f"/participantes/{id}/editar")
@@ -1849,28 +2308,6 @@ def relatorios_pdf():
     response.headers["Content-Type"] = "application/pdf"
     response.headers["Content-Disposition"] = "attachment; filename=relatorio_arrecadacao.pdf"
     return response
-
-@app.route("/demo", methods=["GET", "POST"])
-def demo():
-    if request.method != "POST":
-        return redirect("/login")
-
-    if not DEMO_PASSWORD:
-        flash("Modo demonstração está desativado neste ambiente.", "warning")
-        return redirect("/login")
-
-    senha_demo = request.form.get("senha_demo", "")
-    if senha_demo != DEMO_PASSWORD:
-        flash("Senha do modo demonstração inválida.", "danger")
-        return redirect("/login")
-
-    session["user_id"] = 999
-    session["nome"] = "Modo Demonstração"
-    session["cargo"] = "demo"
-    session["modo_demo"] = True
-    session.permanent = True
-    return redirect("/dashboard")
-
 
 # =========================
 # RUN

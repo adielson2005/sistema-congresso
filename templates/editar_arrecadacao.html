@@ -10,11 +10,6 @@
 </div>
 
 <div class="surface-card">
-    {% if session.get("modo_demo") %}
-    <div class="alert alert-warning mb-4">
-        O modo demonstração permite visualizar esta tela, mas salvar alterações está desabilitado.
-    </div>
-    {% endif %}
     <form method="POST">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="row g-3">
@@ -37,7 +32,7 @@
         </div>
 
         <div class="mt-4 d-flex gap-2">
-            <button class="btn btn-primary" {% if session.get("modo_demo") %}disabled{% endif %}>
+            <button class="btn btn-primary">
                 <i class="bi bi-save-fill me-1"></i> Salvar alterações
             </button>
             <a href="/participantes/{{ arrecadacao.participante_id }}" class="btn btn-outline-secondary">

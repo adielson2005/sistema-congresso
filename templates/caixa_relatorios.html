@@ -1,0 +1,184 @@
+{% extends "base_caixa.html" %}
+
+{% block title %}Relatórios do Caixa{% endblock %}
+{% block page_title %}Relatórios do Caixa{% endblock %}
+
+{% block page_content %}
+<div class="page-header">
+    <h3>Visão consolidada das movimentações do caixa</h3>
+    <p>Acompanhe entradas, saídas, saldo e a evolução diária do mês selecionado.</p>
+</div>
+
+<form method="GET" class="surface-card mb-4">
+    <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <label class="form-label fw-semibold">Mês de referência</label>
+            <input type="month" name="mes" value="{{ mes_selecionado }}" class="form-control">
+        </div>
+        <div class="col-md-8 d-flex gap-2">
+            <button class="btn btn-dark">
+                <i class="bi bi-funnel-fill me-1"></i> Filtrar
+            </button>
+            <a href="/caixa/relatorios" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-clockwise me-1"></i> Mês atual
+            </a>
+        </div>
+    </div>
+</form>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card resumo-kpi border border-success-subtle">
+            <div class="resumo-kpi__header">
+                <div class="icon bg-success-subtle text-success">
+                    <i class="bi bi-arrow-down-circle-fill"></i>
+                </div>
+                <h6>Total de entradas</h6>
+            </div>
+            <h2 class="text-success">R$ {{ '%.2f'|format(total_entradas) }}</h2>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card resumo-kpi border border-danger-subtle">
+            <div class="resumo-kpi__header">
+                <div class="icon bg-danger-subtle text-danger">
+                    <i class="bi bi-arrow-up-circle-fill"></i>
+                </div>
+                <h6>Total de saída</h6>
+            </div>
+            <h2 class="text-danger">R$ {{ '%.2f'|format(total_saidas) }}</h2>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card resumo-kpi border border-primary-subtle">
+            <div class="resumo-kpi__header">
+                <div class="icon bg-primary-subtle text-primary">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+                <h6>Saldo do período</h6>
+            </div>
+            <h2 class="{% if saldo_atual >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                R$ {{ '%.2f'|format(saldo_atual) }}
+            </h2>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="surface-card h-100">
+            <div class="section-title">Resumo por dia</div>
+            <div class="table-responsive table-modern">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th class="text-end">Entradas</th>
+                            <th class="text-end">Saídas</th>
+                            <th class="text-end">Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in movimentacoes_por_dia %}
+                        <tr>
+                            <td>{{ item.data_movimento }}</td>
+                            <td class="text-end text-success">R$ {{ '%.2f'|format(item.total_entradas) }}</td>
+                            <td class="text-end text-danger">R$ {{ '%.2f'|format(item.total_saidas) }}</td>
+                            <td class="text-end {% if (item.total_entradas - item.total_saidas) >= 0 %}text-primary{% else %}text-danger{% endif %}">
+                                R$ {{ '%.2f'|format(item.total_entradas - item.total_saidas) }}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-4">Sem movimentações para o mês selecionado.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="surface-card h-100 mb-4">
+            <div class="section-title">Resumo por categoria</div>
+            <div class="table-responsive table-modern">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Categoria</th>
+                            <th class="text-end">Entradas</th>
+                            <th class="text-end">Saídas</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in resumo_por_categoria %}
+                        <tr>
+                            <td>{{ item.categoria|replace('_', ' ')|title }}</td>
+                            <td class="text-end text-success">R$ {{ '%.2f'|format(item.total_entradas) }}</td>
+                            <td class="text-end text-danger">R$ {{ '%.2f'|format(item.total_saidas) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">Sem dados por categoria.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="surface-card">
+            <div class="section-title">Últimas entradas</div>
+            <div class="table-responsive table-modern">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Descrição</th>
+                            <th class="text-end">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in ultimas_entradas %}
+                        <tr>
+                            <td>{{ item.data_movimento }}</td>
+                            <td>{{ item.descricao }}</td>
+                            <td class="text-end text-success">R$ {{ '%.2f'|format(item.valor) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">Nenhuma entrada registrada.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.resumo-kpi {
+    border-radius: 28px;
+    padding: 22px;
+}
+
+.resumo-kpi__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.resumo-kpi h6 {
+    margin: 0;
+    line-height: 1.15;
+}
+
+.resumo-kpi h2 {
+    margin: 0;
+    padding-left: 56px;
+}
+</style>
+{% endblock %}

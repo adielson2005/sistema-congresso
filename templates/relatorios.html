@@ -131,11 +131,9 @@
                         <a href="/participantes/{{ p.id }}" class="btn btn-sm btn-outline-primary" title="Abrir">
                             <i class="bi bi-eye"></i>
                         </a>
-                        {% if not session.get("modo_demo") %}
                         <a href="/participantes/{{ p.id }}/editar" class="btn btn-sm btn-outline-secondary" title="Editar">
                             <i class="bi bi-pencil-square"></i>
                         </a>
-                        {% endif %}
                     </div>
                 </td>
             </tr>

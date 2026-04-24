@@ -10,11 +10,9 @@
         <p>Pesquise, filtre e acesse rapidamente os detalhes de cada participante.</p>
     </div>
 
-    {% if not session.get("modo_demo") %}
     <a href="/participantes/cadastrar" class="btn btn-primary">
         <i class="bi bi-person-plus-fill me-1"></i> Novo participante
     </a>
-    {% endif %}
 </div>
 
 <form method="GET" class="row g-2 mb-4 surface-card">

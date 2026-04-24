@@ -26,34 +26,17 @@
         <button type="submit" class="btn btn-dark w-100">Entrar</button>
     </form>
 
-    <form method="POST" action="/demo" class="mt-2">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <div class="mb-2">
-            <label class="form-label">Senha demonstração</label>
-            <input type="password" id="senhaDemo" name="senha_demo" class="form-control" placeholder="Digite a senha do modo demo" required>
-            <div class="form-check mt-2">
-                <input class="form-check-input" type="checkbox" id="mostrarSenhaDemo">
-                <label class="form-check-label" for="mostrarSenhaDemo">Visualizar senha</label>
-            </div>
-        </div>
-        <button type="submit" class="btn btn-outline-secondary w-100">
-            Entrar em demonstração
-        </button>
-    </form>
+    <a href="/caixa/login" class="btn btn-outline-success w-100 mt-2">
+        <i class="bi bi-wallet2 me-1"></i> Entrar no Caixa Adolescentes
+    </a>
 </div>
 
 <script>
 const senhaLogin = document.getElementById("senhaLogin");
 const mostrarSenhaLogin = document.getElementById("mostrarSenhaLogin");
-const senhaDemo = document.getElementById("senhaDemo");
-const mostrarSenhaDemo = document.getElementById("mostrarSenhaDemo");
 
 mostrarSenhaLogin.addEventListener("change", () => {
     senhaLogin.type = mostrarSenhaLogin.checked ? "text" : "password";
-});
-
-mostrarSenhaDemo.addEventListener("change", () => {
-    senhaDemo.type = mostrarSenhaDemo.checked ? "text" : "password";
 });
 </script>
 {% endblock %}

@@ -11,7 +11,6 @@ Copie `.env.example` para `.env` e preencha:
 - `DB_PATH`
 - (Opcional) `DEFAULT_ADMIN_USER` e `DEFAULT_ADMIN_PASSWORD` apenas para bootstrap
 - (Opcional) `SINGLE_LOGIN_USER` e `SINGLE_LOGIN_PASSWORD`
-- (Opcional) `DEMO_PASSWORD` somente para ambiente de demonstracao
 
 ## 2) Executar com Docker
 
