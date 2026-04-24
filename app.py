@@ -71,8 +71,9 @@ SINGLE_LOGIN_USER = os.environ.get("SINGLE_LOGIN_USER")
 SINGLE_LOGIN_PASSWORD = os.environ.get("SINGLE_LOGIN_PASSWORD")
 SINGLE_LOGIN_NAME = os.environ.get("SINGLE_LOGIN_NAME", "Login compartilhado")
 SINGLE_LOGIN_ROLE = os.environ.get("SINGLE_LOGIN_ROLE", "admin")
-CAIXA_LOGIN_USER = os.environ.get("CAIXA_LOGIN_USER")
-CAIXA_LOGIN_PASSWORD = os.environ.get("CAIXA_LOGIN_PASSWORD")
+# O caixa usa as mesmas credenciais do login principal do sistema.
+CAIXA_LOGIN_USER = SINGLE_LOGIN_USER
+CAIXA_LOGIN_PASSWORD = SINGLE_LOGIN_PASSWORD
 CAIXA_LOGIN_NAME = os.environ.get("CAIXA_LOGIN_NAME", "Caixa Adolescentes")
 LOGIN_MAX_ATTEMPTS = int(os.environ.get("LOGIN_MAX_ATTEMPTS", "10"))
 LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.environ.get("LOGIN_ATTEMPT_WINDOW_SECONDS", "900"))
@@ -502,9 +503,9 @@ def init_db():
         )
     """)
 
-    default_admin_user = os.environ.get("DEFAULT_ADMIN_USER")
-    default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD")
-    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Administrador")
+    default_admin_user = os.environ.get("DEFAULT_ADMIN_USER", "Ujadepa")
+    default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "cadepa2026@")
+    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Ujadepa")
     default_admin_role = os.environ.get("DEFAULT_ADMIN_ROLE", "admin")
 
     if default_admin_user and default_admin_password:
