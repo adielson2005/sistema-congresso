@@ -505,7 +505,7 @@ def init_db():
 
     default_admin_user = os.environ.get("DEFAULT_ADMIN_USER", "Ujadepa")
     default_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "cadepa2026@")
-    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Ujadepa")
+    default_admin_name = os.environ.get("DEFAULT_ADMIN_NAME", "Administrador")
     default_admin_role = os.environ.get("DEFAULT_ADMIN_ROLE", "admin")
 
     if default_admin_user and default_admin_password:
